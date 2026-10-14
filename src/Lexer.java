@@ -323,7 +323,7 @@ public class Lexer {
         NUMBER, IDENT,
         // Delimiters
         LPAREN, RPAREN, LBRACE, RBRACE, LBRACKET, RBRACKET,
-        COMMA, COLON, SEMICOLON, BAR,
+        COMMA, COLON, SEMICOLON,
         // Operators
         ASSIGN, EQ, NEQ, GE, LE, GT, LT,
         IMPLIES, FATARROW,
@@ -583,21 +583,6 @@ public class Lexer {
    * @return      the next token
    * @exception   java.io.IOException  if any I/O-Error occurs
    */
-  /**
-   * Public entry point: delegates to the generated scanner and post-processes
-   * the '|' character. The DFA table below is generated from Lexer.flex; since
-   * adding a new single-character rule would require regenerating the whole DFA,
-   * '|' (BAR) is recognized here by mapping the UNKNOWN token with text "|"
-   * to TokenType.BAR. Regenerate with `jflex Lexer.flex` to get an identical result.
-   */
-  public Token nextToken() throws java.io.IOException {
-    Token t = yylex();
-    if (t != null && t.type == TokenType.UNKNOWN && "|".equals(t.text)) {
-      return new Token(TokenType.BAR);
-    }
-    return t;
-  }
-
   public Token yylex() throws java.io.IOException {
     int zzInput;
     int zzAction;

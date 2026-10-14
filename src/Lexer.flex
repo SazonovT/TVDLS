@@ -24,7 +24,7 @@ import java.io.Reader;
         NUMBER, IDENT,
         // Delimiters
         LPAREN, RPAREN, LBRACE, RBRACE, LBRACKET, RBRACKET,
-        COMMA, COLON, SEMICOLON,
+        COMMA, COLON, SEMICOLON, BAR,
         // Operators
         ASSIGN, EQ, NEQ, GE, LE, GT, LT,
         IMPLIES, FATARROW,
@@ -116,6 +116,7 @@ Comment        = "//" {InputCharacter}* {LineTerminator}?
 "["            { return new Token(TokenType.LBRACKET); }
 "]"            { return new Token(TokenType.RBRACKET); }
 ","            { return new Token(TokenType.COMMA); }
+"|"            { return new Token(TokenType.BAR); }
 ":"            { return new Token(TokenType.COLON); }
 ";"            { return new Token(TokenType.SEMICOLON); }
 

@@ -80,4 +80,5 @@ public final class Main {
             return new MermaidAstPrinter().toMermaid(module);
         }
     }
+
 }

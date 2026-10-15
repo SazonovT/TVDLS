@@ -53,6 +53,7 @@ import java.io.Reader;
     }
 %}
 
+
 LineTerminator = \r|\n|\r\n
 InputCharacter = [^\r\n]
 WhiteSpace = {LineTerminator} | [ \t\f]

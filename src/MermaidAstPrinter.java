@@ -87,4 +87,5 @@ public class MermaidAstPrinter {
     private String nextId() {
         return "node" + (nodeId++);
     }
+
 }

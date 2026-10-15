@@ -180,4 +180,5 @@ public final class Ast {
         public final List<IntExpr> args;
         public FormulaRef(String name, List<IntExpr> args) { this.name = name; this.args = args; }
     }
+
 }

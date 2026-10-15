@@ -2,621 +2,644 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Парсер языка Funny: рекурсивный спуск, по конструкции LL(1).
+ * Рекурсивный парсер Funny.
  *
- * Приведение грамматики к LL(1)-виду:
- *  1. Левая рекурсия в expr/condition/predicate устранена каскадом приоритетов
- *     с праворекурсивными «хвостами» (sumTail/prodTail и циклы while для and/or),
- *     что даёт левую ассоциативность без изменения дерева разбора.
- *  2. Импликация "->" правоассоциативна — разворачивается рекурсией вправо.
- *  3. Dangling else разрешён стандартным соглашением: else прикрепляется к ближайшему if
- *     (правило "else statement" берётся тем же самым if, ветка else не выносится наверх).
- *  4. FIRST-множества всех альтернатив различимы одним токеном, кроме трёх мест,
- *     где грамматикаFunny требует LL(k)/откат (реализованы через TokenStream.peek/mark/rewind):
- *     a) начало модуля: формула "not(...) => P" против функции (ключевое слово как имя);
- *     b) предикат: formulaRef "f(args)" против сравнения "expr op expr" (оба начинаются с IDENT);
- *     c) присваивание: v=e / v[i]=e / v1,v2=f() (различаются после IDENT,peek до '=' или '[').
+ * Принятая грамматика (на основе Ast.java и набора токенов лексера):
  *
- * Обработка ошибок: collect-and-recover. Ошибки складываются в список с позицией,
- * синхронизация (panic mode) — пропуск до ';' / '}' / EOF.
+ *   module        := item*
+ *   item          := function | formula
+ *   function      := 'function' IDENT '(' paramList? ')' fnClauses block
+ *   fnClauses     := ('requires' condition)?
+ *                    ('returns' '(' retList ')')?
+ *                    ('ensures' predicate)?
+ *                    ('uses' IDENT (',' IDENT)*)?
+ *   formula       := IDENT '(' paramList? ')' '=>' predicate
+ *   paramList     := param (',' param)*
+ *   param         := IDENT ':' type
+ *   type          := 'int' | 'int[]'
+ *
+ *   block         := '{' blockItem* '}'
+ *   blockItem     := localDecl | statement
+ *   localDecl     := type IDENT ';'
+ *
+ *   statement     := 'if' '(' condition ')' statement ('else' statement)?
+ *                  | 'while' '(' condition ')' ('invariant' predicate)? statement
+ *                  | block
+ *                  | 'assert' predicate ';'
+ *                  | 'assume' predicate ';'
+ *                  | tupleAssign | assign ';'
+ *   tupleAssign   := IDENT (',' IDENT)+ '=' call
+ *   assign        := IDENT index* '=' expr          // index = '[' expr ']'
+ *
+ *   condition     := implCond
+ *   implCond      := orCond ('->' implCond)?        // right-assoc
+ *   orCond        := andCond ('or' andCond)*
+ *   andCond       := notCond ('and' notCond)*
+ *   notCond       := '!' notCond | atomCond
+ *   atomCond      := 'true' | 'false' | comparison | '(' condition ')'
+ *   comparison    := expr cmpOp expr
+ *
+ *   predicate     := implPred
+ *   implPred      := orPred ('->' implPred)?
+ *   orPred        := andPred ('or' andPred)*
+ *   andPred       := notPred ('and' notPred)*
+ *   notPred       := '!' notPred | atomPred
+ *   atomPred      := 'true' | 'false'
+ *                  | quantifier
+ *                  | formulaRef
+ *                  | comparison
+ *                  | '(' predicate ')'
+ *   quantifier    := ('forall' | 'exists') IDENT (':' type)? '=>'? predicate
+ *   formulaRef    := IDENT '(' exprList? ')'
+ *
+ *   expr          := sum
+ *   sum           := product (('+' | '-') product)*
+ *   product       := unary (('*' | '/') unary)*
+ *   unary         := '-' unary | atom
+ *   atom          := NUMBER | IDENT callArgs? index* | '(' expr ')'
  */
-public class Parser {
+public final class Parser {
 
-    public static final class ParseError {
-        public final int line, column;   // 0-based, как у лексера
+    // ---------- диагностика ----------
+
+    public static final class Diagnostic {
+        public final int line;
+        public final int column;
         public final String message;
-        ParseError(int line, int column, String message) {
-            this.line = line; this.column = column; this.message = message;
+
+        public Diagnostic(int line, int column, String message) {
+            this.line = line;
+            this.column = column;
+            this.message = message;
         }
-        @Override public String toString() {
-            return String.format("Syntax error at %d:%d: %s", line + 1, column + 1, message);
+
+        @Override
+        public String toString() {
+            return String.format("line %d, col %d: %s",
+                    line + 1, column + 1, message);
         }
     }
 
-    /** Внутренний сигнал «сорви это правило» (для отката try/rewind). Не ошибка пользователя. */
-    private static final class AbortRule extends RuntimeException {
-        AbortRule() { super(null, null, false, false); }
+    private static final class ParseError extends RuntimeException {
+        final Diagnostic diagnostic;
+        ParseError(Diagnostic d) { super(d.message); this.diagnostic = d; }
     }
 
-    private final TokenStream in;
-    private final List<ParseError> errors = new ArrayList<>();
+    // ---------- состояние ----------
 
-    public Parser(TokenStream in) {
-        this.in = in;
+    private static final int MAX_LOOKAHEAD = 512;
+
+    private final TokenStream ts;
+    private final List<Diagnostic> diagnostics = new ArrayList<>();
+
+    public Parser(TokenStream ts) {
+        if (ts == null) throw new IllegalArgumentException("ts == null");
+        this.ts = ts;
     }
 
-    public List<ParseError> errors() {
-        return errors;
+    public List<Diagnostic> getDiagnostics() {
+        return diagnostics;
     }
 
-    public boolean hasErrors() {
-        return !errors.isEmpty();
-    }
+    // ---------- входная точка ----------
 
-    // ------------------------------------------------------------------
-    // Утилиты
-    // ------------------------------------------------------------------
-
-    private boolean check(Lexer.TokenType t) {
-        return in.type() == t;
-    }
-
-    private void expect(Lexer.TokenType t) {
-        if (!check(t)) {
-            error("expected " + t + ", found \"" + in.current().text + "\"");
-            throw new AbortRule();
-        }
-        in.advance();
-    }
-
-    private void error(String msg) {
-        Lexer.Token cur = in.current();
-        errors.add(new ParseError(cur.line, cur.column, msg));
-    }
-
-    /** Panic-mode: пропуск токенов до границы оператора/блока. */
-    private void sync() {
-        while (!check(Lexer.TokenType.SEMICOLON)
-                && !check(Lexer.TokenType.RBRACE)
-                && !check(Lexer.TokenType.EOF)) {
-            in.advance();
-        }
-        if (check(Lexer.TokenType.SEMICOLON)) in.advance();
-    }
-
-    private String ident() {
-        if (!check(Lexer.TokenType.IDENT)) {
-            error("expected identifier, found \"" + in.current().text + "\"");
-            throw new AbortRule();
-        }
-        String name = in.current().text;
-        in.advance();
-        return name;
-    }
-
-    private boolean startsExpr() {
-        Lexer.TokenType t = in.type();
-        return t == Lexer.TokenType.NUMBER || t == Lexer.TokenType.IDENT || t == Lexer.TokenType.MINUS;
-    }
-
-    // ------------------------------------------------------------------
-    // module = { definition } EOF
-    // definition = function | formula
-    // ------------------------------------------------------------------
-
-    public Ast.Module parseModule() {
-        Ast.Module module = new Ast.Module();
-        while (!check(Lexer.TokenType.EOF)) {
+    public Module parseModule() {
+        Module module = new Module();
+        while (!at(Lexer.TokenType.EOF)) {
             try {
-                if (isFormulaStart()) {
-                    module.items.add(parseFormula());
-                } else if (check(Lexer.TokenType.FUNCTION)) {
-                    module.items.add(parseFunction());
-                } else {
-                    error("expected function or formula definition, found \"" + in.current().text + "\"");
-                    sync();
-                }
-            } catch (AbortRule e) {
-                sync();
+                module.items.add(parseItem());
+            } catch (ParseError e) {
+                diagnostics.add(e.diagnostic);
+                recoverTopLevel();
             }
         }
         return module;
     }
 
-    /**
-     * Формула: IDENT "(" vardef-list ")" "=>" predicate ";".
-     * Имя формулы может совпадать с ключевым словом ("not(...) => ..."), поэтому
-     * FIRST(function|formula) пересекаются. Различение — по наличию "=>" сразу
-     * после закрывающей скобки параметров (расширенный lookahead, LL(k)).
-     */
-    private boolean isFormulaStart() {
-        if (check(Lexer.TokenType.EOF)) return false;
-        // Кандидат на имя формулы: любой токен-слово (IDENT или ключевое слово), за которым сразу идёт '('
-        if (!isWordLike(in.type()) || in.peek(1) != Lexer.TokenType.LPAREN) return false;
-        // идём до ')' , соответствующей первому '(' ; глубина только из-за вложенных скобок
-        int depth = 0;
-        int i = 1;
-        while (true) {
-            Lexer.TokenType t = in.peek(i);
-            if (t == Lexer.TokenType.LPAREN) depth++;
-            else if (t == Lexer.TokenType.RPAREN) {
-                depth--;
-                if (depth == 0) break;
-            } else if (t == Lexer.TokenType.EOF || t == Lexer.TokenType.SEMICOLON
-                    || t == Lexer.TokenType.RETURNS || t == Lexer.TokenType.FATARROW) {
-                return false;
-            }
-            i++;
-            if (i > 8192) return false; // аварийная защита
-        }
-        return in.peek(i + 1) == Lexer.TokenType.FATARROW;
+    // ---------- элементы верхнего уровня ----------
+
+    private Ast.Node parseItem() {
+        TokenType t = ts.peek().type;
+        if (t == TokenType.FUNCTION) return parseFunction();
+        if (t == TokenType.IDENT)    return parseFormula();
+        throw err("expected 'function' or formula definition");
     }
 
-    private Ast.Formula parseFormula() {
-        // Имя формулы может быть лексически ключевым словом ("not(...) => ...") —
-        // берём текст текущего токена как имя независимо от его категории.
-        if (check(Lexer.TokenType.EOF)) {
-            error("expected formula name");
-            throw new AbortRule();
-        }
-        String name = in.current().text;
-        in.advance();
-        Ast.Formula f = new Ast.Formula(name);
-        expect(Lexer.TokenType.LPAREN);
-        if (!check(Lexer.TokenType.RPAREN)) {
-            f.params.addAll(parseVariableDefList(true));
-        }
-        expect(Lexer.TokenType.RPAREN);
-        expect(Lexer.TokenType.FATARROW);
-        f.body = parsePredicate();
-        expect(Lexer.TokenType.SEMICOLON);
-        return f;
-    }
+    private Function parseFunction() {
+        expect(TokenType.FUNCTION);
+        String name = expectIdent();
 
-    // function = "function" IDENT "(" [vardefs] ")" ["requires" pred]
-    //            "returns" vardefs ["ensures" pred] ["uses" localdefs] statement ";"
-    private Ast.Function parseFunction() {
-        expect(Lexer.TokenType.FUNCTION);
-        Ast.Function fn = new Ast.Function(ident());
-        expect(Lexer.TokenType.LPAREN);
-        if (!check(Lexer.TokenType.RPAREN)) {
-            fn.params.addAll(parseVariableDefList(true));
+        Function fn = new Function(name);
+        parseParams(fn.params);
+
+        if (at(TokenType.REQUIRES)) {
+            ts.next();
+            fn.requires = parseCondition();
         }
-        expect(Lexer.TokenType.RPAREN);
-
-        if (check(Lexer.TokenType.REQUIRES)) {
-            in.advance();
-            fn.requires = parsePredicate();
+        if (at(TokenType.RETURNS)) {
+            ts.next();
+            parseReturns(fn.returns);
         }
-
-        expect(Lexer.TokenType.RETURNS);
-        fn.returns.addAll(parseVariableDefList(true));
-
-        if (check(Lexer.TokenType.ENSURES)) {
-            in.advance();
+        if (at(TokenType.ENSURES)) {
+            ts.next();
             fn.ensures = parsePredicate();
         }
-
-        if (check(Lexer.TokenType.USES)) {
-            in.advance();
-            fn.locals.addAll(parseVariableDefList(false)); // тип локальной опционален
+        if (at(TokenType.USES)) {
+            ts.next();
+            parseUses();  // информация о зависимостях — вне AST
         }
 
-        fn.body = parseStatement();
-        expect(Lexer.TokenType.SEMICOLON);
+        fn.body = parseBlock(fn.locals);
         return fn;
     }
 
-    /** variableDef = IDENT ":" type ; localVarDef = IDENT [":" type] */
-    private List<Ast.VariableDef> parseVariableDefList(boolean typed) {
-        List<Ast.VariableDef> list = new ArrayList<>();
-        while (true) {
-            String name = ident();
-            String type = null;
-            if (check(Lexer.TokenType.COLON)) {
-                in.advance();
-                type = parseTypeName();
-            } else if (typed) {
-                error("expected ':' and type after parameter '" + name + "'");
-                throw new AbortRule();
+    private Formula parseFormula() {
+        String name = expectIdent();
+        Formula f = new Formula(name);
+        parseParams(f.params);
+        expect(TokenType.FATARROW);
+        f.body = parsePredicate();
+        if (at(TokenType.SEMICOLON)) ts.next();
+        return f;
+    }
+
+    private void parseParams(List<VariableDef> out) {
+        expect(TokenType.LPAREN);
+        if (!at(TokenType.RPAREN)) {
+            out.add(parseParam());
+            while (at(TokenType.COMMA)) { ts.next(); out.add(parseParam()); }
+        }
+        expect(TokenType.RPAREN);
+    }
+
+    private void parseReturns(List<VariableDef> out) {
+        expect(TokenType.LPAREN);
+        if (!at(TokenType.RPAREN)) {
+            out.add(parseParam());
+            while (at(TokenType.COMMA)) { ts.next(); out.add(parseParam()); }
+        }
+        expect(TokenType.RPAREN);
+    }
+
+    private VariableDef parseParam() {
+        String name = expectIdent();
+        expect(TokenType.COLON);
+        String type = parseType();
+        return new VariableDef(name, type);
+    }
+
+    private String parseType() {
+        if (at(TokenType.INT))       { ts.next(); return "int"; }
+        if (at(TokenType.INT_ARRAY)) { ts.next(); return "int[]"; }
+        throw err("expected type ('int' or 'int[]')");
+    }
+
+    private void parseUses() {
+        expectIdent();
+        while (at(TokenType.COMMA)) { ts.next(); expectIdent(); }
+    }
+
+    // ---------- операторы ----------
+
+    private Block parseBlock(List<VariableDef> localsOut) {
+        expect(TokenType.LBRACE);
+        Block block = new Block();
+        while (!at(TokenType.RBRACE) && !at(TokenType.EOF)) {
+            try {
+                // объявление локальной переменной: type IDENT ';'
+                if (at(TokenType.INT) || at(TokenType.INT_ARRAY)) {
+                    String type = parseType();
+                    String name = expectIdent();
+                    expect(TokenType.SEMICOLON);
+                    if (localsOut != null) {
+                        localsOut.add(new VariableDef(name, type));
+                    }
+                    continue;
+                }
+                block.statements.add(parseStatement());
+            } catch (ParseError e) {
+                diagnostics.add(e.diagnostic);
+                recoverInBlock();
             }
-            list.add(new Ast.VariableDef(name, type));
-            if (check(Lexer.TokenType.COMMA)) in.advance();
-            else return list;
         }
+        expect(TokenType.RBRACE);
+        return block;
     }
 
-    private String parseTypeName() {
-        if (check(Lexer.TokenType.INT))       { in.advance(); return "int"; }
-        if (check(Lexer.TokenType.INT_ARRAY)) { in.advance(); return "int[]"; }
-        error("expected type 'int' or 'int[]', found \"" + in.current().text + "\"");
-        throw new AbortRule();
+    private Statement parseStatement() {
+        TokenType t = ts.peek().type;
+        if (t == TokenType.LBRACE)  return parseBlock(null);
+        if (t == TokenType.IF)      return parseIf();
+        if (t == TokenType.WHILE)   return parseWhile();
+        if (t == TokenType.ASSERT)  return parseAssert();
+        if (t == TokenType.ASSUME)  return parseAssume();
+        if (t == TokenType.IDENT)   return parseAssignmentOrTuple();
+        throw err("expected statement");
     }
 
-    // ------------------------------------------------------------------
-    // statement = assignment | conditional | loop | block | assertStmt | assumeStmt
-    // FIRST: ASSIGN-ветка = IDENT; остальные — по ключевым словам — не пересекаются.
-    // ------------------------------------------------------------------
-
-    private Ast.Statement parseStatement() {
-        switch (in.type()) {
-            case IF:     return parseIf();
-            case WHILE:  return parseWhile();
-            case LBRACE: return parseBlock();
-            case ASSERT: { in.advance(); Ast.Statement s = new Ast.Assert(parsePredicate());
-                expect(Lexer.TokenType.SEMICOLON); return s; }
-            case ASSUME: { in.advance(); Ast.Statement s = new Ast.Assume(parsePredicate());
-                expect(Lexer.TokenType.SEMICOLON); return s; }
-            default:     return parseAssignment();
-        }
-    }
-
-    /**
-     * assignment = IDENT "=" expr ";"
-     *            | arrayAccessLHS "=" expr ";"
-     *            | IDENT {"," IDENT} "=" functionCall ";"
-     * Все варианты начинаются с IDENT; различаются сканированием до '=' (ограниченный lookahead).
-     */
-    private Ast.Statement parseAssignment() {
-        String first = ident();
-
-        if (check(Lexer.TokenType.ASSIGN)) {             // var = expr ";"
-            in.advance();
-            Ast.IntExpr value = parseExpr();
-            return new Ast.Assign(first, new ArrayList<>(), value);
-        }
-
-        if (check(Lexer.TokenType.LBRACKET)) {           // a[i][j] = expr ";"
-            List<Ast.IntExpr> indices = new ArrayList<>();
-            do {
-                in.advance();
-                indices.add(parseExpr());
-                expect(Lexer.TokenType.RBRACKET);
-            } while (check(Lexer.TokenType.LBRACKET));
-            expect(Lexer.TokenType.ASSIGN);
-            Ast.IntExpr value = parseExpr();
-            return new Ast.Assign(first, indices, value);
-        }
-
-        if (check(Lexer.TokenType.COMMA)) {              // v1, v2 = call ";"
-            List<String> targets = new ArrayList<>();
-            targets.add(first);
-            while (check(Lexer.TokenType.COMMA)) {
-                in.advance();
-                targets.add(ident());
-            }
-            expect(Lexer.TokenType.ASSIGN);
-            String callee = ident();
-            expect(Lexer.TokenType.LPAREN);
-            List<Ast.IntExpr> args = parseArgList();
-            expect(Lexer.TokenType.RPAREN);
-            return new Ast.TupleAssign(targets, new Ast.Call(callee, args));
-        }
-
-        error("expected '=', '[' or ',' after '" + first + "'");
-        throw new AbortRule();
-    }
-
-    // conditional = "if" "(" condition ")" statement ["else" statement]
-    private Ast.Statement parseIf() {
-        expect(Lexer.TokenType.IF);
-        expect(Lexer.TokenType.LPAREN);
-        Ast.Condition cond = parseCondition();
-        expect(Lexer.TokenType.RPAREN);
-        Ast.Statement thenBranch = parseStatement();
-        Ast.Statement elseBranch = null;
-        // Dangling else: greedy match — else относится к ближайшему незакрытому if.
-        if (check(Lexer.TokenType.ELSE)) {
-            in.advance();
+    private Statement parseIf() {
+        expect(TokenType.IF);
+        expect(TokenType.LPAREN);
+        Condition cond = parseCondition();
+        expect(TokenType.RPAREN);
+        Statement thenBranch = parseStatement();
+        Statement elseBranch = null;
+        if (at(TokenType.ELSE)) {
+            ts.next();
             elseBranch = parseStatement();
         }
-        return new Ast.If(cond, thenBranch, elseBranch);
+        return new If(cond, thenBranch, elseBranch);
     }
 
-    // while = "while" "(" condition ")" ["invariant" predicate] statement
-    private Ast.Statement parseWhile() {
-        expect(Lexer.TokenType.WHILE);
-        expect(Lexer.TokenType.LPAREN);
-        Ast.Condition cond = parseCondition();
-        expect(Lexer.TokenType.RPAREN);
-        Ast.While w = new Ast.While(cond, null);
-        if (check(Lexer.TokenType.INVARIANT)) {
-            in.advance();
+    private Statement parseWhile() {
+        expect(TokenType.WHILE);
+        expect(TokenType.LPAREN);
+        Condition cond = parseCondition();
+        expect(TokenType.RPAREN);
+
+        While w = new While(cond, null);
+        if (at(TokenType.INVARIANT)) {
+            ts.next();
             w.invariant = parsePredicate();
         }
         w.body = parseStatement();
         return w;
     }
 
-    // block = "{" { statement ";" } "}"
-    private Ast.Statement parseBlock() {
-        expect(Lexer.TokenType.LBRACE);
-        Ast.Block b = new Ast.Block();
-        while (!check(Lexer.TokenType.RBRACE) && !check(Lexer.TokenType.EOF)) {
+    private Statement parseAssert() {
+        expect(TokenType.ASSERT);
+        Predicate p = parsePredicate();
+        expect(TokenType.SEMICOLON);
+        return new Assert(p);
+    }
+
+    private Statement parseAssume() {
+        expect(TokenType.ASSUME);
+        Predicate p = parsePredicate();
+        expect(TokenType.SEMICOLON);
+        return new Assume(p);
+    }
+
+    /**
+     * Различение tuple-assign и обычного assign — LL(2):
+     *   IDENT COMMA ...            -> tuple
+     *   IDENT '[' | '='  ...       -> simple/indexed assign
+     */
+    private Statement parseAssignmentOrTuple() {
+        if (ts.peek(1).type == TokenType.COMMA) {
+            List<String> targets = new ArrayList<>();
+            targets.add(expectIdent());
+            while (at(TokenType.COMMA)) {
+                ts.next();
+                targets.add(expectIdent());
+            }
+            expect(TokenType.ASSIGN);
+            Call call = parseCallExpr();
+            expect(TokenType.SEMICOLON);
+            return new TupleAssign(targets, call);
+        }
+
+        String target = expectIdent();
+        List<IntExpr> indices = new ArrayList<>();
+        while (at(TokenType.LBRACKET)) {
+            ts.next();
+            indices.add(parseExpr());
+            expect(TokenType.RBRACKET);
+        }
+        expect(TokenType.ASSIGN);
+        IntExpr value = parseExpr();
+        expect(TokenType.SEMICOLON);
+        return new Assign(target, indices, value);
+    }
+
+    private Call parseCallExpr() {
+        String name = expectIdent();
+        expect(TokenType.LPAREN);
+        List<IntExpr> args = new ArrayList<>();
+        if (!at(TokenType.RPAREN)) {
+            args.add(parseExpr());
+            while (at(TokenType.COMMA)) { ts.next(); args.add(parseExpr()); }
+        }
+        expect(TokenType.RPAREN);
+        return new Call(name, args);
+    }
+
+    // ---------- выражения ----------
+
+    private IntExpr parseExpr() { return parseSum(); }
+
+    private IntExpr parseSum() {
+        IntExpr left = parseProduct();
+        while (at(TokenType.PLUS) || at(TokenType.MINUS)) {
+            Arith.Op op = at(TokenType.PLUS) ? Arith.Op.ADD : Arith.Op.SUB;
+            ts.next();
+            IntExpr right = parseProduct();
+            left = new Arith(op, left, right);
+        }
+        return left;
+    }
+
+    private IntExpr parseProduct() {
+        IntExpr left = parseUnary();
+        while (at(TokenType.STAR) || at(TokenType.SLASH)) {
+            Arith.Op op = at(TokenType.STAR) ? Arith.Op.MUL : Arith.Op.DIV;
+            ts.next();
+            IntExpr right = parseUnary();
+            left = new Arith(op, left, right);
+        }
+        return left;
+    }
+
+    private IntExpr parseUnary() {
+        if (at(TokenType.MINUS)) {
+            ts.next();
+            return new Neg(parseUnary());
+        }
+        return parseAtom();
+    }
+
+    private IntExpr parseAtom() {
+        TokenType t = ts.peek().type;
+        if (t == TokenType.NUMBER) {
+            Token tok = ts.next();
             try {
-                b.statements.add(parseStatement());
-                expect(Lexer.TokenType.SEMICOLON);
-            } catch (AbortRule e) {
-                sync();
+                return new NumLit(Long.parseLong(tok.text));
+            } catch (NumberFormatException e) {
+                throw err("invalid number literal: " + tok.text);
             }
         }
-        expect(Lexer.TokenType.RBRACE);
-        return b;
-    }
-
-    // ------------------------------------------------------------------
-    // expr — арифметика (левая рекурсия устранена хвостовыми процедурами)
-    //   sum      = product { ("+"|"-") product }
-    //   product  = unary  { ("*"|"/") unary }
-    //   unary    = "-" unary | primary
-    //   primary  = NUMBER | IDENT ("(" args ")" | "[" expr "]"* | ε) | "(" expr ")"
-    // ------------------------------------------------------------------
-
-    private Ast.IntExpr parseExpr() {
-        return parseSum();
-    }
-
-    private Ast.IntExpr parseSum() {
-        Ast.IntExpr left = parseProduct();
-        while (check(Lexer.TokenType.PLUS) || check(Lexer.TokenType.MINUS)) {
-            Ast.Arith.Op op = check(Lexer.TokenType.PLUS) ? Ast.Arith.Op.ADD : Ast.Arith.Op.SUB;
-            in.advance();
-            left = new Ast.Arith(op, left, parseProduct());
-        }
-        return left;
-    }
-
-    private Ast.IntExpr parseProduct() {
-        Ast.IntExpr left = parseUnary();
-        while (check(Lexer.TokenType.STAR) || check(Lexer.TokenType.SLASH)) {
-            Ast.Arith.Op op = check(Lexer.TokenType.STAR) ? Ast.Arith.Op.MUL : Ast.Arith.Op.DIV;
-            in.advance();
-            left = new Ast.Arith(op, left, parseUnary());
-        }
-        return left;
-    }
-
-    private Ast.IntExpr parseUnary() {
-        if (check(Lexer.TokenType.MINUS)) {
-            in.advance();
-            return new Ast.Neg(parseUnary());
-        }
-        return parsePrimary();
-    }
-
-    private Ast.IntExpr parsePrimary() {
-        if (check(Lexer.TokenType.NUMBER)) {
-            long v = Long.parseLong(in.current().text);
-            in.advance();
-            return new Ast.NumLit(v);
-        }
-        if (check(Lexer.TokenType.LPAREN)) {
-            in.advance();
-            Ast.IntExpr e = parseExpr();
-            expect(Lexer.TokenType.RPAREN);
+        if (t == TokenType.LPAREN) {
+            ts.next();
+            IntExpr e = parseExpr();
+            expect(TokenType.RPAREN);
             return e;
         }
-        if (check(Lexer.TokenType.IDENT)) {
-            String name = in.current().text;
-            in.advance();
-            if (check(Lexer.TokenType.LPAREN)) {          // functionCall
-                in.advance();
-                List<Ast.IntExpr> args = parseArgList();
-                expect(Lexer.TokenType.RPAREN);
-                return new Ast.Call(name, args);
+        if (t == TokenType.IDENT) {
+            String name = ts.next().text;
+            if (at(TokenType.LPAREN)) {
+                ts.next();
+                List<IntExpr> args = new ArrayList<>();
+                if (!at(TokenType.RPAREN)) {
+                    args.add(parseExpr());
+                    while (at(TokenType.COMMA)) { ts.next(); args.add(parseExpr()); }
+                }
+                expect(TokenType.RPAREN);
+                return new Call(name, args);
             }
-            if (check(Lexer.TokenType.LBRACKET)) {        // arrayAccess (цепочка индексов)
-                List<Ast.IntExpr> idx = new ArrayList<>();
-                do {
-                    in.advance();
-                    idx.add(parseExpr());
-                    expect(Lexer.TokenType.RBRACKET);
-                } while (check(Lexer.TokenType.LBRACKET));
-                return new Ast.ArrayAccess(name, idx);
+            if (at(TokenType.LBRACKET)) {
+                List<IntExpr> indices = new ArrayList<>();
+                while (at(TokenType.LBRACKET)) {
+                    ts.next();
+                    indices.add(parseExpr());
+                    expect(TokenType.RBRACKET);
+                }
+                return new ArrayAccess(name, indices);
             }
-            return new Ast.Var(name);                     // variable
+            return new Var(name);
         }
-        error("expected expression, found \"" + in.current().text + "\"");
-        throw new AbortRule();
+        throw err("expected expression");
     }
 
-    private List<Ast.IntExpr> parseArgList() {
-        List<Ast.IntExpr> args = new ArrayList<>();
-        if (check(Lexer.TokenType.RPAREN)) return args;
-        while (true) {
-            args.add(parseExpr());
-            if (check(Lexer.TokenType.COMMA)) in.advance();
-            else return args;
-        }
-    }
+    // ---------- условия ----------
 
-    // ------------------------------------------------------------------
-    // condition (в if/while): приоритеты not > and > or > -> (правоассоц.)
-    //   impliesC = orC ["->" impliesC]
-    //   orC      = andC {"or" andC}
-    //   andC     = notC {"and" notC}
-    //   notC     = "not" notC | atomC
-    //   atomC    = "true" | "false" | comparison | "(" condition ")"
-    // ------------------------------------------------------------------
-
-    private Ast.Condition parseCondition() {
-        Ast.Condition left = parseOr();
-        if (check(Lexer.TokenType.IMPLIES)) {
-            in.advance();
-            return new Ast.Implies(left, parseCondition()); // рекурсия вправо => правоассоциативность
+    private Condition parseCondition() {
+        Condition left = parseConditionOr();
+        if (at(TokenType.IMPLIES)) {
+            ts.next();
+            Condition right = parseCondition();  // right-assoc
+            return new Implies(left, right);
         }
         return left;
     }
 
-    private Ast.Condition parseOr() {
-        Ast.PredNode left = parseAnd();
-        while (check(Lexer.TokenType.OR)) {
-            in.advance();
-            left = new Ast.AndOr(Ast.AndOr.Op.OR, left, parseAnd());
+    private Condition parseConditionOr() {
+        Condition left = parseConditionAnd();
+        while (at(TokenType.OR)) {
+            ts.next();
+            Condition right = parseConditionAnd();
+            left = new AndOr(AndOr.Op.OR, left, right);
         }
-        return (Ast.Condition) left;
+        return left;
     }
 
-    private Ast.Condition parseAnd() {
-        Ast.PredNode left = parseNotCond();
-        while (check(Lexer.TokenType.AND)) {
-            in.advance();
-            left = new Ast.AndOr(Ast.AndOr.Op.AND, left, parseNotCond());
+    private Condition parseConditionAnd() {
+        Condition left = parseConditionNot();
+        while (at(TokenType.AND)) {
+            ts.next();
+            Condition right = parseConditionNot();
+            left = new AndOr(AndOr.Op.AND, left, right);
         }
-        return (Ast.Condition) left;
+        return left;
     }
 
-    private Ast.Condition parseNotCond() {
-        if (check(Lexer.TokenType.NOT)) {
-            in.advance();
-            return new Ast.Not(parseNotCond());
+    private Condition parseConditionNot() {
+        if (at(TokenType.NOT)) {
+            ts.next();
+            PredNode inner = parseConditionNot();
+            return new Not(inner);
         }
         return parseConditionAtom();
     }
 
-    private Ast.Condition parseConditionAtom() {
-        if (check(Lexer.TokenType.TRUE))  { in.advance(); return new Ast.BoolLit(true); }
-        if (check(Lexer.TokenType.FALSE)) { in.advance(); return new Ast.BoolLit(false); }
-        if (check(Lexer.TokenType.LPAREN)) {
-            in.advance();
-            Ast.Condition c = parseCondition();
-            expect(Lexer.TokenType.RPAREN);
+    private Condition parseConditionAtom() {
+        if (at(TokenType.TRUE))  { ts.next(); return new BoolLit(true); }
+        if (at(TokenType.FALSE)) { ts.next(); return new BoolLit(false); }
+        if (at(TokenType.LPAREN)) {
+            ts.next();
+            Condition c = parseCondition();
+            expect(TokenType.RPAREN);
             return c;
         }
-        if (startsExpr()) {                 // FIRST(comparison) = FIRST(expr)
-            return parseComparison();
-        }
-        error("expected condition, found \"" + in.current().text + "\"");
-        throw new AbortRule();
+        IntExpr left = parseExpr();
+        Comparison.Op op = parseCmpOp();
+        IntExpr right = parseExpr();
+        return new Comparison(op, left, right);
     }
 
-    // comparison = expr cmpOp expr
-    private Ast.Comparison parseComparison() {
-        Ast.IntExpr left = parseExpr();
-        Ast.Comparison.Op op;
-        switch (in.type()) {
-            case EQ:  op = Ast.Comparison.Op.EQ;  break;
-            case NEQ: op = Ast.Comparison.Op.NEQ; break;
-            case GE:  op = Ast.Comparison.Op.GE;  break;
-            case LE:  op = Ast.Comparison.Op.LE;  break;
-            case GT:  op = Ast.Comparison.Op.GT;  break;
-            case LT:  op = Ast.Comparison.Op.LT;  break;
-            default:
-                error("expected comparison operator, found \"" + in.current().text + "\"");
-                throw new AbortRule();
-        }
-        in.advance();
-        Ast.IntExpr right = parseExpr();
-        return new Ast.Comparison(op, left, right);
-    }
+    // ---------- предикаты ----------
 
-    // ------------------------------------------------------------------
-    // predicate = quantifier | formulaRef | true/false | comparison
-    //           | "not" predicate | predicate ("and"|"or") predicate | "(" predicate ")"
-    // (в predicate-контексте импликация отсутствует по спецификации)
-    // ------------------------------------------------------------------
-
-    private Ast.Predicate parsePredicate() {
-        return (Ast.Predicate) parsePredOr();
-    }
-
-    private Ast.PredNode parsePredOr() {
-        Ast.PredNode left = parsePredAnd();
-        while (check(Lexer.TokenType.OR)) {
-            in.advance();
-            left = new Ast.AndOr(Ast.AndOr.Op.OR, left, parsePredAnd());
+    private Predicate parsePredicate() {
+        Predicate left = parsePredicateOr();
+        if (at(TokenType.IMPLIES)) {
+            ts.next();
+            Predicate right = parsePredicate();
+            return new Implies(left, right);
         }
         return left;
     }
 
-    private Ast.PredNode parsePredAnd() {
-        Ast.PredNode left = parsePredNot();
-        while (check(Lexer.TokenType.AND)) {
-            in.advance();
-            left = new Ast.AndOr(Ast.AndOr.Op.AND, left, parsePredNot());
+    private Predicate parsePredicateOr() {
+        Predicate left = parsePredicateAnd();
+        while (at(TokenType.OR)) {
+            ts.next();
+            Predicate right = parsePredicateAnd();
+            left = new AndOr(AndOr.Op.OR, left, right);
         }
         return left;
     }
 
-    private Ast.PredNode parsePredNot() {
-        if (check(Lexer.TokenType.NOT)) {
-            in.advance();
-            return new Ast.Not(parsePredNot());
+    private Predicate parsePredicateAnd() {
+        Predicate left = parsePredicateNot();
+        while (at(TokenType.AND)) {
+            ts.next();
+            Predicate right = parsePredicateNot();
+            left = new AndOr(AndOr.Op.AND, left, right);
         }
-        return parsePredAtom();
+        return left;
     }
 
-    private Ast.PredNode parsePredAtom() {
-        if (check(Lexer.TokenType.TRUE))  { in.advance(); return new Ast.BoolLit(true); }
-        if (check(Lexer.TokenType.FALSE)) { in.advance(); return new Ast.BoolLit(false); }
-        if (check(Lexer.TokenType.FORALL) || check(Lexer.TokenType.EXISTS)) {
+    private Predicate parsePredicateNot() {
+        if (at(TokenType.NOT)) {
+            ts.next();
+            PredNode inner = parsePredicateNot();
+            return new Not(inner);
+        }
+        return parsePredicateAtom();
+    }
+
+    private Predicate parsePredicateAtom() {
+        TokenType t = ts.peek().type;
+        if (t == TokenType.TRUE)  { ts.next(); return new BoolLit(true); }
+        if (t == TokenType.FALSE) { ts.next(); return new BoolLit(false); }
+        if (t == TokenType.FORALL || t == TokenType.EXISTS) {
             return parseQuantifier();
         }
-        if (check(Lexer.TokenType.LPAREN)) {
-            in.advance();
-            Ast.PredNode inner = parsePredOr();
-            expect(Lexer.TokenType.RPAREN);
-            return inner;
+        if (t == TokenType.LPAREN) {
+            ts.next();
+            Predicate p = parsePredicate();
+            expect(TokenType.RPAREN);
+            return p;
         }
-        if (check(Lexer.TokenType.IDENT)) {
-            // FIRST(formulaRef) ∩ FIRST(comparison) = {IDENT}.
-            // Различие: у formulaRef второй токен '(' и после ')' нет cmpOp.
-            // Используем LL(2) peek + откат.
-            if (in.peek(1) == Lexer.TokenType.LPAREN) {
-                int m = in.mark();
-                String name = in.current().text;
-                in.advance();
-                in.advance(); // '('
-                List<Ast.IntExpr> args = parseArgList();
-                expect(Lexer.TokenType.RPAREN);
-                // если дальше идёт оператор сравнения — это было выражение, а не формула?
-                // По грамматике "f(x) == y" — корректное сравнение с вызовом внутри expr,
-                // поэтому formulaRef принимаем только если следующий токен НЕ cmpOp.
-                if (isCmpOp(in.type())) {
-                    in.rewind(m);
-                    return parseComparison();
+
+        // Неоднозначность IDENT '(' ... ')': сравнение или formulaRef.
+        // Решается lookahead до закрывающей скобки и следующего токена.
+        if (t == TokenType.IDENT && looksLikeFormulaRef()) {
+            return parseFormulaRef();
+        }
+
+        IntExpr left = parseExpr();
+        Comparison.Op op = parseCmpOp();
+        IntExpr right = parseExpr();
+        return new Comparison(op, left, right);
+    }
+
+    /**
+     * IDENT '(' ... ')' с последующим токеном, не являющимся cmpOp,
+     * трактуется как formulaRef. Иначе — как начало сравнения.
+     */
+    private boolean looksLikeFormulaRef() {
+        if (!at(TokenType.IDENT)) return false;
+        if (ts.peek(1).type != TokenType.LPAREN) return false;
+
+        int depth = 0;
+        for (int i = 1; i < MAX_LOOKAHEAD; i++) {
+            TokenType tt = ts.peek(i).type;
+            if (tt == TokenType.EOF) return false;
+            if (tt == TokenType.LPAREN) depth++;
+            else if (tt == TokenType.RPAREN) {
+                depth--;
+                if (depth == 0) {
+                    TokenType after = ts.peek(i + 1).type;
+                    switch (after) {
+                        case EQ: case NEQ: case GE:
+                        case LE: case GT:  case LT:
+                            return false;
+                        default:
+                            return true;
+                    }
                 }
-                return new Ast.FormulaRef(name, args);
             }
-            return parseComparison();
         }
-        if (startsExpr()) {                 // NUMBER / MINUS — только сравнение
-            return parseComparison();
-        }
-        error("expected predicate, found \"" + in.current().text + "\"");
-        throw new AbortRule();
+        return false;
     }
 
-    /** Токены, которые могут служить именем формулы (ключевые слова — тоже идентификаторы на входе). */
-    private boolean isWordLike(Lexer.TokenType t) {
-        switch (t) {
-            case IDENT: case FUNCTION: case REQUIRES: case RETURNS: case ENSURES: case USES:
-            case IF: case ELSE: case WHILE: case INVARIANT: case ASSERT: case ASSUME:
-            case TRUE: case FALSE: case NOT: case AND: case OR: case FORALL: case EXISTS:
-                return true;
-            default:
-                return false;
+    private FormulaRef parseFormulaRef() {
+        String name = expectIdent();
+        expect(TokenType.LPAREN);
+        List<IntExpr> args = new ArrayList<>();
+        if (!at(TokenType.RPAREN)) {
+            args.add(parseExpr());
+            while (at(TokenType.COMMA)) { ts.next(); args.add(parseExpr()); }
+        }
+        expect(TokenType.RPAREN);
+        return new FormulaRef(name, args);
+    }
+
+    private Predicate parseQuantifier() {
+        Quantifier.Kind kind = at(TokenType.FORALL)
+                ? Quantifier.Kind.FORALL
+                : Quantifier.Kind.EXISTS;
+        ts.next();
+
+        String name = expectIdent();
+        String type = null;
+        if (at(TokenType.COLON)) {
+            ts.next();
+            type = parseType();
+        }
+        if (at(TokenType.FATARROW)) ts.next();   // опциональный разделитель
+
+        VariableDef var = new VariableDef(name, type);
+        Predicate body = parsePredicate();
+        return new Quantifier(kind, var, body);
+    }
+
+    // ---------- примитивы ----------
+
+    private boolean at(TokenType t) {
+        return ts.peek().type == t;
+    }
+
+    private Token expect(TokenType t) {
+        Token cur = ts.peek();
+        if (cur.type != t) {
+            throw err("expected " + t + ", got " + cur.type
+                    + (cur.text == null || cur.text.isEmpty() ? "" : " ('" + cur.text + "')"));
+        }
+        return ts.next();
+    }
+
+    private String expectIdent() {
+        Token cur = ts.peek();
+        if (cur.type != TokenType.IDENT) {
+            throw err("expected identifier, got " + cur.type);
+        }
+        ts.next();
+        return cur.text;
+    }
+
+    private Comparison.Op parseCmpOp() {
+        switch (ts.peek().type) {
+            case EQ:  ts.next(); return Comparison.Op.EQ;
+            case NEQ: ts.next(); return Comparison.Op.NEQ;
+            case GE:  ts.next(); return Comparison.Op.GE;
+            case LE:  ts.next(); return Comparison.Op.LE;
+            case GT:  ts.next(); return Comparison.Op.GT;
+            case LT:  ts.next(); return Comparison.Op.LT;
+            default:  throw err("expected comparison operator");
         }
     }
 
-    private boolean isCmpOp(Lexer.TokenType t) {
-        return t == Lexer.TokenType.EQ || t == Lexer.TokenType.NEQ || t == Lexer.TokenType.GE
-                || t == Lexer.TokenType.LE || t == Lexer.TokenType.GT || t == Lexer.TokenType.LT;
+    private ParseError err(String msg) {
+        Token cur = ts.peek();
+        return new ParseError(new Diagnostic(cur.line, cur.column, msg));
     }
 
-    // quantifier = ("forall"|"exists") "(" variableDef ["|" variableDef]* ")" predicate
-    // (по спецификации — одна переменная; запятые/несколько объявлений не допускаются)
-    private Ast.Quantifier parseQuantifier() {
-        Ast.Quantifier.Kind kind = check(Lexer.TokenType.FORALL)
-                ? Ast.Quantifier.Kind.FORALL : Ast.Quantifier.Kind.EXISTS;
-        in.advance();
-        expect(Lexer.TokenType.LPAREN);
-        String vname = ident();
-        expect(Lexer.TokenType.COLON);
-        String vtype = parseTypeName();
-        Ast.VariableDef vdef = new Ast.VariableDef(vname, vtype);
-        Ast.Predicate body = parsePredicate();
-        expect(Lexer.TokenType.RPAREN);
-        return new Ast.Quantifier(kind, vdef, body);
+    // ---------- восстановление ----------
+
+    private void recoverTopLevel() {
+        while (!at(TokenType.EOF)) {
+            TokenType t = ts.peek().type;
+            if (t == TokenType.FUNCTION) return;
+            if (t == TokenType.IDENT)    return;
+            ts.next();
+        }
+    }
+
+    private void recoverInBlock() {
+        while (!at(TokenType.EOF) && !at(TokenType.RBRACE)) {
+            if (at(TokenType.SEMICOLON)) { ts.next(); return; }
+            ts.next();
+        }
     }
 }

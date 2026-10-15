@@ -1,105 +1,108 @@
 import java.io.IOException;
-import java.io.Reader;
+import java.util.ArrayList;
+import java.util.List;
 
 /**
- * Поток токенов с бесконечным lookahead поверх JFlex-лексера.
+ * Поток токенов с произвольным lookahead, лениво читающий токены из Lexer.
  *
- * LL(1)-разбор использует только current()/advance(). Методы mark()/rewind()
- * дают ограниченный lookahead (LL(k)) для мест, где одного токена недостаточно:
- *   - различение формулы "f(...) => pred" и функции "f(...) returns ..." при f == "function";
- *   - разрешение неоднозначности dangling else (наличие "else" после then-ветки).
+ * Особенности интеграции с JFlex-лексером из Lexer.flex:
+ *  - Lexer.Token — нестатический внутренний класс, поэтому экземпляры
+ *    создаются через lexer.new Token(...); извне это допустимо, т.к.
+ *    конструктор объявлен public.
+ *  - Lexer.yylex() бросает java.io.IOException — здесь она перехватывается
+ *    и трактуется как конец потока (после печати сообщения).
+ *  - Токены TokenType.UNKNOWN автоматически пропускаются с диагностикой,
+ *    чтобы Parser никогда не видел их и не ломался.
  */
-public class TokenStream {
-    private static final int INITIAL_CAPACITY = 16;
+public final class TokenStream {
 
     private final Lexer lexer;
-    private Lexer.Token[] buf = new Lexer.Token[INITIAL_CAPACITY];
-    private int start = 0;   // индекс текущего токена
-    private int end = 0;     // индекс за последним загруженным токеном
-    private boolean eofSeen = false;
+    private final List<Lexer.Token> buffer = new ArrayList<>();
+    private boolean eofReached = false;
+    private Lexer.Token eofToken;
+    private int position = 0;
+    private final List<Integer> marks = new ArrayList<>();
 
-    public TokenStream(Reader reader) {
-        this.lexer = new Lexer(reader);
-        ensureLoaded(0);
+    public TokenStream(Lexer lexer) {
+        if (lexer == null) throw new IllegalArgumentException("lexer == null");
+        this.lexer = lexer;
     }
 
-    private void ensureLoaded(int ahead) {
-        while (end <= start + ahead) {
-            if (eofSeen) return;
-            Lexer.Token t;
-            try {
-                t = lexer.yylex();
-            } catch (IOException e) {
-                throw new RuntimeException("Lexer error: " + e.getMessage(), e);
+    // ---------- публичный API ----------
+
+    public Lexer.Token peek() { return peek(0); }
+
+    public Lexer.Token peek(int i) {
+        if (i < 0) throw new IllegalArgumentException("lookahead must be >= 0");
+        ensure(position + i);
+        return buffer.get(position + i);
+    }
+
+    public Lexer.Token next() {
+        Lexer.Token t = peek();
+        if (t.type != Lexer.TokenType.EOF) position++;
+        return t;
+    }
+
+    /** Синоним next(); оставлен для совместимости с существующим Parser. */
+    public Lexer.Token advance() { return next(); }
+
+    public boolean isEof() { return peek().type == Lexer.TokenType.EOF; }
+
+    public void mark() { marks.add(position); }
+
+    public void rewind() {
+        if (marks.isEmpty()) throw new IllegalStateException("no mark to rewind");
+        position = marks.remove(marks.size() - 1);
+    }
+
+    public void commit() {
+        if (marks.isEmpty()) throw new IllegalStateException("no mark to commit");
+        marks.remove(marks.size() - 1);
+    }
+
+    // ---------- внутреннее ----------
+
+    private void ensure(int idx) {
+        while (buffer.size() <= idx) {
+            if (eofReached) {
+                // после EOF любой запрос обслуживается ссылкой на один и тот же токен
+                buffer.add(eofToken);
+                continue;
             }
+
+            Lexer.Token t = readNext();
+
             if (t == null || t.type == Lexer.TokenType.EOF) {
-                eofSeen = true;
-                if (t == null) {
-                    t = syntheticEof();
-                }
+                eofToken = (t != null) ? t : makeEof();
+                eofReached = true;
+                buffer.add(eofToken);
+                continue;
             }
-            if (end == buf.length) {
-                grow();
+            if (t.type == Lexer.TokenType.UNKNOWN) {
+                System.err.printf("lex: unknown token '%s' at line %d, col %d%n",
+                        t.text, t.line + 1, t.column + 1);
+                continue;
             }
-            buf[end++] = t;
+            buffer.add(t);
         }
     }
 
-    private Lexer.Token syntheticEof() {
-        // Token — inner-класс лексера, создать его можно только через экземпляр,
-        // поэтому вызываем yylex ещё раз: после EOF он стабильно возвращает EOF-токен.
+    private Lexer.Token readNext() {
         try {
-            Lexer.Token t = lexer.yylex();
-            if (t != null) return t;
+            return lexer.yylex();
         } catch (IOException e) {
-            throw new RuntimeException(e);
+            System.err.println("lexer I/O error: " + e.getMessage());
+            return null;
         }
-        throw new IllegalStateException("Lexer returned null after EOF");
     }
 
-    private void grow() {
-        Lexer.Token[] nb = new Lexer.Token[buf.length * 2];
-        System.arraycopy(buf, 0, nb, 0, buf.length);
-        buf = nb;
-    }
-
-    /** Текущий токен. */
-    public Lexer.Token current() {
-        ensureLoaded(0);
-        return buf[start];
-    }
-
-    /** Тип текущего токена. */
-    public Lexer.TokenType type() {
-        return current().type;
-    }
-
-    /** Сдвиг на один токен вперёд (на EOF остаётся на месте). */
-    public void advance() {
-        if (current().type != Lexer.TokenType.EOF) {
-            start++;
-        }
-        ensureLoaded(0);
-    }
-
-    /** Токен через i позиций от текущего (0 == current()). */
-    public Lexer.Token tokenAt(int i) {
-        ensureLoaded(i);
-        return buf[start + i];
-    }
-
-    /** Тип токена через i позиций от текущего. */
-    public Lexer.TokenType peek(int i) {
-        return tokenAt(i).type;
-    }
-
-    /** Позиция (маркер) в потоке для последующего возврата. */
-    public int mark() {
-        return start;
-    }
-
-    /** Возврат потока к позиции, сохранённой mark(). */
-    public void rewind(int marker) {
-        start = marker;
+    /**
+     * Аварийный EOF-токен (только если yylex() вернул null из-за IOException).
+     * Создаётся через внешний экземпляр Lexer, т.к. Token — inner class;
+     * конструктор Token использует текущие yytext()/yyline/yycolumn лексера.
+     */
+    private Lexer.Token makeEof() {
+        return lexer.new Token(Lexer.TokenType.EOF);
     }
 }

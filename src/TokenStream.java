@@ -15,9 +15,6 @@ public class TokenStream {
     private void fetchToken() {
         try {
             Lexer.Token token = lexer.yylex();
-            if (token == null) {
-                token = createSyntheticEof();
-            }
             buffer.add(token);
         } catch (IOException e) {
             throw new RuntimeException("Lexer I/O error: " + e.getMessage(), e);
@@ -25,7 +22,7 @@ public class TokenStream {
     }
 
     private Lexer.Token createSyntheticEof() {
-        Lexer.Token last = buffer.isEmpty() ? null : buffer.get(buffer.size() - 1);
+        Lexer.Token last = buffer.isEmpty() ? null : buffer.getLast();
         int line = last != null ? last.line : 0;
         int col = last != null ? last.column : 0;
         return new Lexer.Token(Lexer.TokenType.EOF, "", line, col);

@@ -1,9 +1,6 @@
 import java.util.ArrayList;
 import java.util.List;
 
-/**
- * Рекурсивный нисходящий парсер языка Funny (LL(1) + ограниченный lookahead).
- */
 public final class Parser {
 
     public static final class Diagnostic {
@@ -32,20 +29,17 @@ public final class Parser {
     }
 
     private static final int MAX_LOOKAHEAD = 64;
-
     private final TokenStream ts;
     private final List<Diagnostic> diagnostics = new ArrayList<>();
 
     public Parser(TokenStream ts) {
-        if (ts == null) throw new IllegalArgumentException("ts == null");
+        if (ts == null) throw new IllegalArgumentException("TokenStream is null");
         this.ts = ts;
     }
 
     public List<Diagnostic> getDiagnostics() {
         return diagnostics;
     }
-
-    // ---------------- entry point ----------------
 
     public Ast.Module parseModule() {
         Ast.Module module = new Ast.Module();
@@ -64,111 +58,141 @@ public final class Parser {
         return module;
     }
 
-    // ---------------- top level ----------------
-
     private Ast.Node parseItem() {
-        Lexer.TokenType t = ts.peek().type;
-        if (t == Lexer.TokenType.FUNCTION) return parseFunction();
-        if (t == Lexer.TokenType.IDENT) return parseFormula();
-        throw err("expected 'function' or formula definition, got " + describe(ts.peek()));
+        if (at(Lexer.TokenType.IDENT)) {
+            return parseFunctionOrFormula();
+        }
+        throw err("expected function or formula definition (starting with identifier), got " + describe(ts.peek()));
     }
 
-    private Ast.Function parseFunction() {
-        expect(Lexer.TokenType.FUNCTION);
-        Ast.Function fn = new Ast.Function(expectIdent());
+    private Ast.Node parseFunctionOrFormula() {
+        String name = expectIdent();
+        expect(Lexer.TokenType.LPAREN);
+        List<Ast.VariableDef> params = parseVariableDefs();
+        expect(Lexer.TokenType.RPAREN);
 
-        parseParams(fn.params);
+        if (at(Lexer.TokenType.FATARROW)) {
+            return parseFormulaBody(name, params);
+        } else {
+            return parseFunctionBody(name, params);
+        }
+    }
+
+    private Ast.Formula parseFormulaBody(String name, List<Ast.VariableDef> params) {
+        Ast.Formula f = new Ast.Formula(name);
+        f.params = params;
+        expect(Lexer.TokenType.FATARROW);
+        f.body = parsePredicate();
+        if (at(Lexer.TokenType.SEMICOLON)) {
+            ts.next();
+        }
+        return f;
+    }
+
+    private Ast.Function parseFunctionBody(String name, List<Ast.VariableDef> params) {
+        Ast.Function fn = new Ast.Function(name);
+        fn.params = params;
 
         if (at(Lexer.TokenType.REQUIRES)) {
             ts.next();
             fn.requires = parsePredicate();
         }
-        if (at(Lexer.TokenType.RETURNS)) {
-            ts.next();
-            parseParams(fn.returns);
-        }
+
+        expect(Lexer.TokenType.RETURNS);
+        fn.returns = parseVariableDefs();
+
         if (at(Lexer.TokenType.ENSURES)) {
             ts.next();
             fn.ensures = parsePredicate();
         }
+
         if (at(Lexer.TokenType.USES)) {
             ts.next();
-            parseUses();
+            fn.locals = parseLocalVarDefs();
         }
 
-        fn.body = parseBlock(fn.locals);
+        fn.body = parseStatement();
         return fn;
     }
 
-    private Ast.Formula parseFormula() {
-        Ast.Formula f = new Ast.Formula(expectIdent());
-        parseParams(f.params);
-        expect(Lexer.TokenType.FATARROW);
-        f.body = parsePredicate();
-        if (at(Lexer.TokenType.SEMICOLON)) ts.next();
-        return f;
-    }
-
-    private void parseParams(List<Ast.VariableDef> out) {
-        expect(Lexer.TokenType.LPAREN);
-        if (!at(Lexer.TokenType.RPAREN)) {
-            out.add(parseParam());
-            while (at(Lexer.TokenType.COMMA)) {
-                ts.next();
-                out.add(parseParam());
-            }
+    // ---------------- Variable Definitions ----------------
+    private List<Ast.VariableDef> parseVariableDefs() {
+        List<Ast.VariableDef> res = new ArrayList<>();
+        // КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: обработка пустого списка параметров ()
+        if (at(Lexer.TokenType.RPAREN)) {
+            return res;
         }
-        expect(Lexer.TokenType.RPAREN);
+        res.add(parseVariableDef());
+        while (at(Lexer.TokenType.COMMA)) {
+            ts.next();
+            res.add(parseVariableDef());
+        }
+        return res;
     }
 
-    private Ast.VariableDef parseParam() {
+    private Ast.VariableDef parseVariableDef() {
         String name = expectIdent();
         expect(Lexer.TokenType.COLON);
         return new Ast.VariableDef(name, parseType());
     }
 
+    private List<Ast.VariableDef> parseLocalVarDefs() {
+        List<Ast.VariableDef> res = new ArrayList<>();
+        res.add(parseLocalVarDef());
+        while (at(Lexer.TokenType.COMMA)) {
+            ts.next();
+            res.add(parseLocalVarDef());
+        }
+        return res;
+    }
+
+    private Ast.VariableDef parseLocalVarDef() {
+        String name = expectIdent();
+        String type = null;
+        if (at(Lexer.TokenType.COLON)) {
+            ts.next();
+            type = parseType();
+        }
+        return new Ast.VariableDef(name, type);
+    }
+
     private String parseType() {
-        if (at(Lexer.TokenType.INT)) { ts.next(); return "int"; }
-        if (at(Lexer.TokenType.INT_ARRAY)) { ts.next(); return "int[]"; }
+        if (at(Lexer.TokenType.INT)) {
+            ts.next();
+            return "int";
+        }
+        if (at(Lexer.TokenType.INT_ARRAY)) {
+            ts.next();
+            return "int[]";
+        }
         throw err("expected type ('int' or 'int[]'), got " + describe(ts.peek()));
     }
 
-    private void parseUses() {
-        expectIdent();
-        while (at(Lexer.TokenType.COMMA)) {
-            ts.next();
-            expectIdent();
-        }
+    // ---------------- Statements ----------------
+    private Ast.Statement parseStatement() {
+        Lexer.TokenType t = ts.peek().type;
+        if (t == Lexer.TokenType.LBRACE) return parseBlock();
+        if (t == Lexer.TokenType.IF) return parseIf();
+        if (t == Lexer.TokenType.WHILE) return parseWhile();
+        if (t == Lexer.TokenType.ASSERT) return parseAssert();
+        if (t == Lexer.TokenType.ASSUME) return parseAssume();
+        if (t == Lexer.TokenType.IDENT) return parseAssignment();
+        throw err("expected statement, got " + describe(ts.peek()));
     }
 
-    // ---------------- statements ----------------
-
-    private Ast.Block parseBlock(List<Ast.VariableDef> localsOut) {
+    private Ast.Block parseBlock() {
         expect(Lexer.TokenType.LBRACE);
         Ast.Block block = new Ast.Block();
-
         while (!at(Lexer.TokenType.RBRACE) && !at(Lexer.TokenType.EOF)) {
             Lexer.Token before = ts.peek();
             try {
-                if (at(Lexer.TokenType.INT) || at(Lexer.TokenType.INT_ARRAY)) {
-                    String type = parseType();
-                    String name = expectIdent();
-                    expect(Lexer.TokenType.SEMICOLON);
-                    if (localsOut != null) {
-                        localsOut.add(new Ast.VariableDef(name, type));
-                    }
-                    continue;
-                }
                 block.statements.add(parseStatement());
             } catch (ParseError e) {
                 diagnostics.add(e.diagnostic);
                 recoverInBlock();
-                if (ts.peek() == before) {
-                    ts.next();
-                }
+                if (ts.peek() == before) ts.next();
             }
         }
-
         if (at(Lexer.TokenType.EOF)) {
             diagnostics.add(err("unexpected end of file: expected '}'").diagnostic);
             return block;
@@ -177,23 +201,11 @@ public final class Parser {
         return block;
     }
 
-    private Ast.Statement parseStatement() {
-        Lexer.TokenType t = ts.peek().type;
-        if (t == Lexer.TokenType.LBRACE)  return parseBlock(null);
-        if (t == Lexer.TokenType.IF)      return parseIf();
-        if (t == Lexer.TokenType.WHILE)   return parseWhile();
-        if (t == Lexer.TokenType.ASSERT)  return parseAssert();
-        if (t == Lexer.TokenType.ASSUME)  return parseAssume();
-        if (t == Lexer.TokenType.IDENT)   return parseAssignOrTuple();
-        throw err("expected statement, got " + describe(ts.peek()));
-    }
-
     private Ast.Statement parseIf() {
         expect(Lexer.TokenType.IF);
         expect(Lexer.TokenType.LPAREN);
         Ast.Condition cond = parseCondition();
         expect(Lexer.TokenType.RPAREN);
-
         Ast.Statement thenBranch = parseStatement();
         Ast.Statement elseBranch = null;
         if (at(Lexer.TokenType.ELSE)) {
@@ -208,7 +220,6 @@ public final class Parser {
         expect(Lexer.TokenType.LPAREN);
         Ast.Condition cond = parseCondition();
         expect(Lexer.TokenType.RPAREN);
-
         Ast.While w = new Ast.While(cond, null);
         if (at(Lexer.TokenType.INVARIANT)) {
             ts.next();
@@ -232,34 +243,42 @@ public final class Parser {
         return new Ast.Assume(p);
     }
 
-    private Ast.Statement parseAssignOrTuple() {
-        if (ts.peek(1).type == Lexer.TokenType.COMMA) {
+    private Ast.Statement parseAssignment() {
+        String firstIdent = expectIdent();
+
+        if (at(Lexer.TokenType.COMMA)) {
             List<String> targets = new ArrayList<>();
-            targets.add(expectIdent());
+            targets.add(firstIdent);
             while (at(Lexer.TokenType.COMMA)) {
                 ts.next();
                 targets.add(expectIdent());
             }
             expect(Lexer.TokenType.ASSIGN);
-            Ast.Call call = parseCallExpr();
+            Ast.Call call = parseFunctionCall();
             expect(Lexer.TokenType.SEMICOLON);
             return new Ast.TupleAssign(targets, call);
         }
 
-        String target = expectIdent();
-        List<Ast.IntExpr> indices = new ArrayList<>();
-        while (at(Lexer.TokenType.LBRACKET)) {
-            ts.next();
-            indices.add(parseExpr());
-            expect(Lexer.TokenType.RBRACKET);
+        if (at(Lexer.TokenType.LBRACKET)) {
+            List<Ast.IntExpr> indices = new ArrayList<>();
+            while (at(Lexer.TokenType.LBRACKET)) {
+                ts.next();
+                indices.add(parseExpr());
+                expect(Lexer.TokenType.RBRACKET);
+            }
+            expect(Lexer.TokenType.ASSIGN);
+            Ast.IntExpr value = parseExpr();
+            expect(Lexer.TokenType.SEMICOLON);
+            return new Ast.Assign(firstIdent, indices, value);
         }
+
         expect(Lexer.TokenType.ASSIGN);
         Ast.IntExpr value = parseExpr();
         expect(Lexer.TokenType.SEMICOLON);
-        return new Ast.Assign(target, indices, value);
+        return new Ast.Assign(firstIdent, new ArrayList<>(), value);
     }
 
-    private Ast.Call parseCallExpr() {
+    private Ast.Call parseFunctionCall() {
         String name = expectIdent();
         expect(Lexer.TokenType.LPAREN);
         List<Ast.IntExpr> args = new ArrayList<>();
@@ -274,8 +293,7 @@ public final class Parser {
         return new Ast.Call(name, args);
     }
 
-    // ---------------- integer expressions ----------------
-
+    // ---------------- Expressions ----------------
     private Ast.IntExpr parseExpr() {
         return parseSum();
     }
@@ -310,7 +328,6 @@ public final class Parser {
 
     private Ast.IntExpr parseAtom() {
         Lexer.TokenType t = ts.peek().type;
-
         if (t == Lexer.TokenType.NUMBER) {
             Lexer.Token tok = ts.next();
             try {
@@ -319,31 +336,17 @@ public final class Parser {
                 throw err("invalid number literal: " + tok.text);
             }
         }
-
         if (t == Lexer.TokenType.LPAREN) {
             ts.next();
             Ast.IntExpr e = parseExpr();
             expect(Lexer.TokenType.RPAREN);
             return e;
         }
-
         if (t == Lexer.TokenType.IDENT) {
             String name = ts.next().text;
-
             if (at(Lexer.TokenType.LPAREN)) {
-                ts.next();
-                List<Ast.IntExpr> args = new ArrayList<>();
-                if (!at(Lexer.TokenType.RPAREN)) {
-                    args.add(parseExpr());
-                    while (at(Lexer.TokenType.COMMA)) {
-                        ts.next();
-                        args.add(parseExpr());
-                    }
-                }
-                expect(Lexer.TokenType.RPAREN);
-                return new Ast.Call(name, args);
+                return parseFunctionCallFromName(name);
             }
-
             if (at(Lexer.TokenType.LBRACKET)) {
                 List<Ast.IntExpr> indices = new ArrayList<>();
                 while (at(Lexer.TokenType.LBRACKET)) {
@@ -353,15 +356,26 @@ public final class Parser {
                 }
                 return new Ast.ArrayAccess(name, indices);
             }
-
             return new Ast.Var(name);
         }
-
         throw err("expected expression, got " + describe(ts.peek()));
     }
 
-    // ---------------- conditions ----------------
+    private Ast.Call parseFunctionCallFromName(String name) {
+        expect(Lexer.TokenType.LPAREN);
+        List<Ast.IntExpr> args = new ArrayList<>();
+        if (!at(Lexer.TokenType.RPAREN)) {
+            args.add(parseExpr());
+            while (at(Lexer.TokenType.COMMA)) {
+                ts.next();
+                args.add(parseExpr());
+            }
+        }
+        expect(Lexer.TokenType.RPAREN);
+        return new Ast.Call(name, args);
+    }
 
+    // ---------------- Conditions & Predicates ----------------
     private Ast.Condition parseCondition() {
         Ast.Condition left = parseConditionOr();
         if (at(Lexer.TokenType.IMPLIES)) {
@@ -398,23 +412,19 @@ public final class Parser {
     }
 
     private Ast.Condition parseConditionAtom() {
-        if (at(Lexer.TokenType.TRUE))  { ts.next(); return new Ast.BoolLit(true); }
+        if (at(Lexer.TokenType.TRUE)) { ts.next(); return new Ast.BoolLit(true); }
         if (at(Lexer.TokenType.FALSE)) { ts.next(); return new Ast.BoolLit(false); }
-
         if (at(Lexer.TokenType.LPAREN)) {
             ts.next();
             Ast.Condition c = parseCondition();
             expect(Lexer.TokenType.RPAREN);
             return c;
         }
-
         Ast.IntExpr left = parseExpr();
         Ast.Comparison.Op op = parseCmpOp();
         Ast.IntExpr right = parseExpr();
         return new Ast.Comparison(op, left, right);
     }
-
-    // ---------------- predicates ----------------
 
     private Ast.Predicate parsePredicate() {
         Ast.Predicate left = parsePredicateOr();
@@ -453,9 +463,9 @@ public final class Parser {
 
     private Ast.Predicate parsePredicateAtom() {
         Lexer.TokenType t = ts.peek().type;
-
-        if (t == Lexer.TokenType.TRUE)  { ts.next(); return new Ast.BoolLit(true); }
+        if (t == Lexer.TokenType.TRUE) { ts.next(); return new Ast.BoolLit(true); }
         if (t == Lexer.TokenType.FALSE) { ts.next(); return new Ast.BoolLit(false); }
+
         if (t == Lexer.TokenType.FORALL || t == Lexer.TokenType.EXISTS) {
             return parseQuantifier();
         }
@@ -477,19 +487,40 @@ public final class Parser {
         return new Ast.Comparison(op, left, right);
     }
 
+    private Ast.Predicate parseQuantifier() {
+        Ast.Quantifier.Kind kind = at(Lexer.TokenType.FORALL) ? Ast.Quantifier.Kind.FORALL : Ast.Quantifier.Kind.EXISTS;
+        ts.next();
+        expect(Lexer.TokenType.LPAREN);
+        Ast.VariableDef var = parseVariableDef();
+        expect(Lexer.TokenType.PIPE);
+        Ast.Predicate body = parsePredicate();
+        expect(Lexer.TokenType.RPAREN);
+        return new Ast.Quantifier(kind, var, body);
+    }
+
+    private Ast.FormulaRef parseFormulaRef() {
+        String name = expectIdent();
+        expect(Lexer.TokenType.LPAREN);
+        List<Ast.IntExpr> args = new ArrayList<>();
+        if (!at(Lexer.TokenType.RPAREN)) {
+            args.add(parseExpr());
+            while (at(Lexer.TokenType.COMMA)) {
+                ts.next();
+                args.add(parseExpr());
+            }
+        }
+        expect(Lexer.TokenType.RPAREN);
+        return new Ast.FormulaRef(name, args);
+    }
+
     private boolean looksLikeFormulaRef() {
         if (ts.peek().type != Lexer.TokenType.IDENT) return false;
         if (ts.peek(1).type != Lexer.TokenType.LPAREN) return false;
-
         int depth = 0;
         for (int i = 1; i <= MAX_LOOKAHEAD; i++) {
             Lexer.TokenType t = ts.peek(i).type;
             switch (t) {
-                case EOF:
-                case SEMICOLON:
-                case LBRACE:
-                case RBRACE:
-                case ASSIGN:
+                case EOF: case SEMICOLON: case LBRACE: case RBRACE: case ASSIGN:
                     return false;
                 case LPAREN:
                     depth++;
@@ -508,48 +539,25 @@ public final class Parser {
     }
 
     private static boolean isCmpOp(Lexer.TokenType t) {
-        switch (t) {
-            case EQ: case NEQ: case GE: case LE: case GT: case LT:
-                return true;
+        return t == Lexer.TokenType.EQ || t == Lexer.TokenType.NEQ ||
+                t == Lexer.TokenType.GE || t == Lexer.TokenType.LE ||
+                t == Lexer.TokenType.GT || t == Lexer.TokenType.LT;
+    }
+
+    private Ast.Comparison.Op parseCmpOp() {
+        switch (ts.peek().type) {
+            case EQ:  ts.next(); return Ast.Comparison.Op.EQ;
+            case NEQ: ts.next(); return Ast.Comparison.Op.NEQ;
+            case GE:  ts.next(); return Ast.Comparison.Op.GE;
+            case LE:  ts.next(); return Ast.Comparison.Op.LE;
+            case GT:  ts.next(); return Ast.Comparison.Op.GT;
+            case LT:  ts.next(); return Ast.Comparison.Op.LT;
             default:
-                return false;
+                throw err("expected comparison operator, got " + describe(ts.peek()));
         }
     }
 
-    private Ast.FormulaRef parseFormulaRef() {
-        String name = expectIdent();
-        expect(Lexer.TokenType.LPAREN);
-        List<Ast.IntExpr> args = new ArrayList<>();
-        if (!at(Lexer.TokenType.RPAREN)) {
-            args.add(parseExpr());
-            while (at(Lexer.TokenType.COMMA)) {
-                ts.next();
-                args.add(parseExpr());
-            }
-        }
-        expect(Lexer.TokenType.RPAREN);
-        return new Ast.FormulaRef(name, args);
-    }
-
-    private Ast.Predicate parseQuantifier() {
-        Ast.Quantifier.Kind kind = at(Lexer.TokenType.FORALL)
-                ? Ast.Quantifier.Kind.FORALL
-                : Ast.Quantifier.Kind.EXISTS;
-        ts.next();
-
-        String name = expectIdent();
-        String type = null;
-        if (at(Lexer.TokenType.COLON)) {
-            ts.next();
-            type = parseType();
-        }
-        if (at(Lexer.TokenType.FATARROW)) ts.next();
-
-        return new Ast.Quantifier(kind, new Ast.VariableDef(name, type), parsePredicate());
-    }
-
-    // ---------------- primitives ----------------
-
+    // ---------------- Primitives ----------------
     private boolean at(Lexer.TokenType t) {
         return ts.peek().type == t;
     }
@@ -571,19 +579,6 @@ public final class Parser {
         return cur.text;
     }
 
-    private Ast.Comparison.Op parseCmpOp() {
-        switch (ts.peek().type) {
-            case EQ:  ts.next(); return Ast.Comparison.Op.EQ;
-            case NEQ: ts.next(); return Ast.Comparison.Op.NEQ;
-            case GE:  ts.next(); return Ast.Comparison.Op.GE;
-            case LE:  ts.next(); return Ast.Comparison.Op.LE;
-            case GT:  ts.next(); return Ast.Comparison.Op.GT;
-            case LT:  ts.next(); return Ast.Comparison.Op.LT;
-            default:
-                throw err("expected comparison operator, got " + describe(ts.peek()));
-        }
-    }
-
     private static String describe(Lexer.Token t) {
         if (t.text == null || t.text.isEmpty()) return String.valueOf(t.type);
         return t.type + " ('" + t.text + "')";
@@ -594,13 +589,13 @@ public final class Parser {
         return new ParseError(new Diagnostic(cur.line, cur.column, msg));
     }
 
-    // ---------------- error recovery ----------------
-
+    // ---------------- Error Recovery ----------------
     private void recoverTopLevel() {
         while (!at(Lexer.TokenType.EOF)) {
             Lexer.TokenType t = ts.peek().type;
-            if (t == Lexer.TokenType.FUNCTION) return;
-            if (t == Lexer.TokenType.IDENT && ts.peek(1).type == Lexer.TokenType.LPAREN) return;
+            if (t == Lexer.TokenType.IDENT && ts.peek(1).type == Lexer.TokenType.LPAREN) {
+                return;
+            }
             ts.next();
         }
     }
@@ -614,5 +609,4 @@ public final class Parser {
             ts.next();
         }
     }
-
 }

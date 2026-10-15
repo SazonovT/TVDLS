@@ -23,18 +23,18 @@ public final class Ast {
 
     public static final class Function implements Node {
         public final String name;
-        public final List<VariableDef> params = new ArrayList<>();
+        public List<VariableDef> params = new ArrayList<>();
         public PredNode requires;
-        public final List<VariableDef> returns = new ArrayList<>();
+        public List<VariableDef> returns = new ArrayList<>();
         public PredNode ensures;
-        public final List<VariableDef> locals = new ArrayList<>();
+        public List<VariableDef> locals = new ArrayList<>();
         public Statement body;
         public Function(String name) { this.name = name; }
     }
 
     public static final class Formula implements Node {
         public final String name;
-        public final List<VariableDef> params = new ArrayList<>();
+        public List<VariableDef> params = new ArrayList<>();
         public PredNode body;
         public Formula(String name) { this.name = name; }
     }

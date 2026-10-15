@@ -33,13 +33,13 @@ public class Lexer {
    * Translates characters to character classes
    */
   private static final String ZZ_CMAP_PACKED = 
-    "\11\0\1\3\1\2\1\53\1\3\1\1\22\0\1\3\1\36\6\0"+
-    "\1\44\1\45\1\43\1\42\1\50\1\41\1\0\1\4\12\32\1\51"+
-    "\1\52\1\40\1\35\1\37\2\0\32\33\1\30\1\0\1\31\1\0"+
-    "\1\34\1\0\1\24\1\33\1\10\1\26\1\15\1\5\1\33\1\22"+
-    "\1\12\2\33\1\20\1\25\1\7\1\13\1\33\1\16\1\14\1\17"+
-    "\1\11\1\6\1\23\1\21\1\27\2\33\1\46\1\0\1\47\7\0"+
-    "\1\53\u1fa2\0\1\53\1\53\uffff\0\uffff\0\uffff\0\uffff\0\uffff\0\uffff\0\uffff\0\uffff\0\uffff\0\uffff\0\uffff\0\uffff\0\uffff\0\uffff\0\uffff\0\uffff\0\udfe6\0";
+    "\11\0\1\3\1\2\1\53\1\3\1\1\22\0\1\3\1\35\6\0"+
+    "\1\44\1\45\1\42\1\41\1\50\1\40\1\0\1\4\12\31\1\51"+
+    "\1\52\1\37\1\34\1\36\2\0\32\32\1\27\1\0\1\30\1\0"+
+    "\1\33\1\0\1\22\2\32\1\25\1\6\1\15\1\32\1\20\1\11"+
+    "\2\32\1\16\1\23\1\14\1\24\1\32\1\7\1\5\1\12\1\13"+
+    "\1\10\1\21\1\17\1\26\2\32\1\46\1\43\1\47\7\0\1\53"+
+    "\u1fa2\0\1\53\1\53\uffff\0\uffff\0\uffff\0\uffff\0\uffff\0\uffff\0\uffff\0\uffff\0\uffff\0\uffff\0\uffff\0\uffff\0\uffff\0\uffff\0\uffff\0\uffff\0\udfe6\0";
 
   /** 
    * Translates characters to character classes
@@ -54,16 +54,16 @@ public class Lexer {
   private static final String ZZ_ACTION_PACKED_0 =
     "\1\0\1\1\1\2\1\3\13\4\1\5\1\6\1\7"+
     "\1\10\1\1\1\11\1\12\1\13\1\14\1\15\1\16"+
-    "\1\17\1\20\1\21\1\22\1\23\1\24\1\2\6\4"+
-    "\1\25\1\4\1\26\7\4\1\27\1\30\1\31\1\32"+
-    "\1\33\1\34\2\2\4\4\1\35\1\4\1\36\7\4"+
-    "\1\37\4\4\1\40\1\41\1\0\4\4\1\42\6\4"+
-    "\1\43\1\44\5\4\1\45\3\4\1\46\4\4\1\47"+
-    "\1\50\1\51\2\4\1\52\1\4\1\53\1\54\1\4"+
-    "\1\55\1\56";
+    "\1\17\1\20\1\21\1\22\1\23\1\24\1\25\1\2"+
+    "\6\4\1\26\7\4\1\27\1\30\1\31\1\32\1\33"+
+    "\1\34\1\35\2\2\6\4\1\36\2\4\1\37\4\4"+
+    "\1\40\3\4\1\41\1\4\1\42\1\0\1\4\1\43"+
+    "\11\4\1\44\1\4\1\45\1\4\1\46\5\4\1\47"+
+    "\1\4\1\50\1\51\1\52\1\4\1\53\1\54\1\4"+
+    "\1\55\1\4\1\56";
 
   private static int [] zzUnpackAction() {
-    int [] result = new int[118];
+    int [] result = new int[112];
     int offset = 0;
     offset = zzUnpackAction(ZZ_ACTION_PACKED_0, offset, result);
     return result;
@@ -92,20 +92,19 @@ public class Lexer {
     "\0\u0160\0\u018c\0\u01b8\0\u01e4\0\u0210\0\u023c\0\u0268\0\54"+
     "\0\54\0\u0294\0\u02c0\0\u02ec\0\u0318\0\u0344\0\u0370\0\54"+
     "\0\54\0\54\0\54\0\54\0\54\0\54\0\54\0\54"+
-    "\0\u039c\0\u03c8\0\u03f4\0\u0420\0\u044c\0\u0478\0\u04a4\0\u0134"+
-    "\0\u04d0\0\u0134\0\u04fc\0\u0528\0\u0554\0\u0580\0\u05ac\0\u05d8"+
-    "\0\u0604\0\54\0\54\0\54\0\54\0\54\0\54\0\u0630"+
-    "\0\54\0\u065c\0\u0688\0\u06b4\0\u06e0\0\u0134\0\u070c\0\u0738"+
-    "\0\u0764\0\u0790\0\u07bc\0\u07e8\0\u0814\0\u0840\0\u086c\0\u0134"+
-    "\0\u0898\0\u08c4\0\u08f0\0\u091c\0\u0134\0\u0134\0\u0948\0\u0974"+
-    "\0\u09a0\0\u09cc\0\u09f8\0\u0134\0\u0a24\0\u0a50\0\u0a7c\0\u0aa8"+
-    "\0\u0ad4\0\u0b00\0\u0134\0\54\0\u0b2c\0\u0b58\0\u0b84\0\u0bb0"+
-    "\0\u0bdc\0\u0134\0\u0c08\0\u0c34\0\u0c60\0\u0134\0\u0c8c\0\u0cb8"+
-    "\0\u0ce4\0\u0d10\0\u0134\0\u0134\0\u0134\0\u0d3c\0\u0d68\0\u0134"+
-    "\0\u0d94\0\u0134\0\u0134\0\u0dc0\0\u0134\0\u0134";
+    "\0\54\0\u039c\0\u03c8\0\u03f4\0\u0420\0\u044c\0\u0478\0\u04a4"+
+    "\0\u0108\0\u04d0\0\u04fc\0\u0528\0\u0554\0\u0580\0\u05ac\0\u05d8"+
+    "\0\u0108\0\54\0\54\0\54\0\54\0\54\0\54\0\u0604"+
+    "\0\54\0\u0630\0\u065c\0\u0688\0\u06b4\0\u06e0\0\u070c\0\u0738"+
+    "\0\u0764\0\u0790\0\u0108\0\u07bc\0\u07e8\0\u0814\0\u0840\0\u0108"+
+    "\0\u086c\0\u0898\0\u08c4\0\u0108\0\u08f0\0\u0108\0\u091c\0\u0948"+
+    "\0\u0108\0\u0974\0\u09a0\0\u09cc\0\u09f8\0\u0a24\0\u0a50\0\u0a7c"+
+    "\0\u0aa8\0\u0ad4\0\54\0\u0b00\0\u0108\0\u0b2c\0\u0108\0\u0b58"+
+    "\0\u0b84\0\u0bb0\0\u0bdc\0\u0c08\0\u0108\0\u0c34\0\u0108\0\u0108"+
+    "\0\u0108\0\u0c60\0\u0108\0\u0108\0\u0c8c\0\u0108\0\u0cb8\0\u0108";
 
   private static int [] zzUnpackRowMap() {
-    int [] result = new int[118];
+    int [] result = new int[112];
     int offset = 0;
     offset = zzUnpackRowMap(ZZ_ROWMAP_PACKED_0, offset, result);
     return result;
@@ -129,69 +128,64 @@ public class Lexer {
 
   private static final String ZZ_TRANS_PACKED_0 =
     "\1\2\3\3\1\4\1\5\1\6\1\7\1\10\1\11"+
-    "\1\12\1\13\1\14\1\15\3\10\1\16\2\10\1\17"+
-    "\3\10\1\20\1\21\1\22\1\10\1\2\1\23\1\24"+
-    "\1\25\1\26\1\27\1\30\1\31\1\32\1\33\1\34"+
-    "\1\35\1\36\1\37\1\40\56\0\3\3\54\0\1\41"+
-    "\54\0\1\10\1\42\4\10\1\43\10\10\1\44\3\10"+
-    "\2\0\3\10\24\0\12\10\1\45\10\10\2\0\3\10"+
-    "\24\0\6\10\1\46\14\10\2\0\3\10\24\0\23\10"+
-    "\2\0\3\10\24\0\7\10\1\47\13\10\2\0\3\10"+
-    "\24\0\1\50\1\10\1\51\20\10\2\0\3\10\24\0"+
-    "\7\10\1\52\13\10\2\0\3\10\24\0\10\10\1\53"+
-    "\12\10\2\0\3\10\24\0\2\10\1\54\10\10\1\55"+
-    "\6\10\1\56\2\0\3\10\24\0\15\10\1\57\5\10"+
-    "\2\0\3\10\24\0\2\10\1\60\7\10\1\61\10\10"+
-    "\2\0\3\10\51\0\1\22\56\0\1\62\1\0\1\63"+
-    "\51\0\1\64\53\0\1\65\53\0\1\66\55\0\1\67"+
-    "\14\0\1\41\1\70\1\71\51\41\5\0\2\10\1\72"+
-    "\20\10\2\0\3\10\24\0\7\10\1\73\13\10\2\0"+
-    "\3\10\24\0\13\10\1\74\7\10\2\0\3\10\24\0"+
-    "\10\10\1\75\12\10\2\0\3\10\24\0\4\10\1\76"+
-    "\16\10\2\0\3\10\24\0\1\10\1\77\21\10\2\0"+
-    "\3\10\24\0\4\10\1\100\11\10\1\101\4\10\2\0"+
-    "\3\10\24\0\4\10\1\102\4\10\1\103\11\10\2\0"+
-    "\3\10\24\0\12\10\1\104\10\10\2\0\3\10\24\0"+
-    "\12\10\1\105\10\10\2\0\3\10\24\0\5\10\1\106"+
-    "\15\10\2\0\3\10\24\0\5\10\1\107\15\10\2\0"+
-    "\3\10\24\0\21\10\1\110\1\10\2\0\3\10\24\0"+
-    "\12\10\1\111\10\10\2\0\3\10\21\0\1\71\56\0"+
-    "\3\10\1\112\17\10\2\0\3\10\24\0\17\10\1\113"+
-    "\3\10\2\0\3\10\24\0\12\10\1\114\10\10\2\0"+
-    "\3\10\24\0\12\10\1\115\10\10\2\0\3\10\24\0"+
-    "\10\10\1\116\12\10\2\0\3\10\24\0\23\10\1\117"+
-    "\1\0\3\10\24\0\17\10\1\120\3\10\2\0\3\10"+
-    "\24\0\1\10\1\121\21\10\2\0\3\10\24\0\1\10"+
-    "\1\122\21\10\2\0\3\10\24\0\1\10\1\123\21\10"+
-    "\2\0\3\10\24\0\10\10\1\124\12\10\2\0\3\10"+
-    "\24\0\12\10\1\125\10\10\2\0\3\10\24\0\13\10"+
-    "\1\126\7\10\2\0\3\10\24\0\1\10\1\127\6\10"+
-    "\1\130\12\10\2\0\3\10\24\0\4\10\1\131\16\10"+
-    "\2\0\3\10\24\0\13\10\1\132\7\10\2\0\3\10"+
-    "\24\0\10\10\1\133\12\10\2\0\3\10\50\0\1\134"+
-    "\27\0\7\10\1\135\13\10\2\0\3\10\24\0\7\10"+
-    "\1\136\13\10\2\0\3\10\24\0\5\10\1\137\15\10"+
-    "\2\0\3\10\24\0\7\10\1\140\13\10\2\0\3\10"+
-    "\24\0\4\10\1\141\16\10\2\0\3\10\24\0\10\10"+
-    "\1\142\12\10\2\0\3\10\24\0\20\10\1\143\2\10"+
-    "\2\0\3\10\24\0\7\10\1\144\13\10\2\0\3\10"+
-    "\24\0\5\10\1\145\15\10\2\0\3\10\24\0\13\10"+
-    "\1\146\7\10\2\0\3\10\24\0\5\10\1\147\15\10"+
-    "\2\0\3\10\24\0\2\10\1\150\20\10\2\0\3\10"+
-    "\24\0\7\10\1\151\13\10\2\0\3\10\24\0\10\10"+
-    "\1\152\12\10\2\0\3\10\24\0\12\10\1\153\10\10"+
-    "\2\0\3\10\24\0\10\10\1\154\12\10\2\0\3\10"+
-    "\24\0\4\10\1\155\16\10\2\0\3\10\24\0\6\10"+
-    "\1\156\14\10\2\0\3\10\24\0\17\10\1\157\3\10"+
-    "\2\0\3\10\24\0\12\10\1\160\10\10\2\0\3\10"+
-    "\24\0\10\10\1\161\12\10\2\0\3\10\24\0\12\10"+
-    "\1\162\10\10\2\0\3\10\24\0\2\10\1\163\20\10"+
-    "\2\0\3\10\24\0\2\10\1\164\20\10\2\0\3\10"+
-    "\24\0\12\10\1\165\10\10\2\0\3\10\24\0\4\10"+
-    "\1\166\16\10\2\0\3\10\17\0";
+    "\1\7\1\12\1\13\1\14\1\7\1\15\2\7\1\16"+
+    "\1\7\1\17\2\7\1\20\1\21\1\22\1\7\1\2"+
+    "\1\23\1\24\1\25\1\26\1\27\1\30\1\31\1\32"+
+    "\1\33\1\34\1\35\1\36\1\37\1\40\1\41\56\0"+
+    "\3\3\54\0\1\42\54\0\1\7\1\43\20\7\2\0"+
+    "\3\7\25\0\7\7\1\44\1\7\1\45\7\7\1\46"+
+    "\2\0\3\7\25\0\22\7\2\0\3\7\25\0\5\7"+
+    "\1\47\14\7\2\0\3\7\25\0\7\7\1\50\1\51"+
+    "\11\7\2\0\3\7\25\0\1\52\21\7\2\0\3\7"+
+    "\25\0\17\7\1\53\2\7\2\0\3\7\25\0\15\7"+
+    "\1\54\1\7\1\55\2\7\2\0\3\7\25\0\13\7"+
+    "\1\56\6\7\2\0\3\7\25\0\5\7\1\57\1\7"+
+    "\1\60\12\7\2\0\3\7\25\0\1\61\21\7\2\0"+
+    "\3\7\51\0\1\22\56\0\1\62\1\0\1\63\51\0"+
+    "\1\64\53\0\1\65\53\0\1\66\55\0\1\67\15\0"+
+    "\1\42\1\70\1\71\51\42\5\0\2\7\1\72\3\7"+
+    "\1\73\13\7\2\0\3\7\25\0\5\7\1\74\14\7"+
+    "\2\0\3\7\25\0\5\7\1\75\14\7\2\0\3\7"+
+    "\25\0\4\7\1\76\15\7\2\0\3\7\25\0\1\7"+
+    "\1\77\20\7\2\0\3\7\25\0\6\7\1\100\5\7"+
+    "\1\101\5\7\2\0\3\7\25\0\3\7\1\102\16\7"+
+    "\2\0\3\7\25\0\6\7\1\103\13\7\2\0\3\7"+
+    "\25\0\11\7\1\104\10\7\2\0\3\7\25\0\1\105"+
+    "\21\7\2\0\3\7\25\0\4\7\1\106\15\7\2\0"+
+    "\3\7\25\0\5\7\1\107\14\7\2\0\3\7\25\0"+
+    "\20\7\1\110\1\7\2\0\3\7\22\0\1\71\56\0"+
+    "\3\7\1\111\16\7\2\0\3\7\25\0\3\7\1\112"+
+    "\16\7\2\0\3\7\25\0\3\7\1\113\16\7\2\0"+
+    "\3\7\25\0\1\7\1\114\20\7\2\0\3\7\25\0"+
+    "\5\7\1\115\14\7\2\0\3\7\25\0\5\7\1\116"+
+    "\14\7\2\0\3\7\25\0\22\7\1\117\1\0\3\7"+
+    "\25\0\15\7\1\120\4\7\2\0\3\7\25\0\1\7"+
+    "\1\121\20\7\2\0\3\7\25\0\5\7\1\122\14\7"+
+    "\2\0\3\7\25\0\15\7\1\123\4\7\2\0\3\7"+
+    "\25\0\11\7\1\124\10\7\2\0\3\7\25\0\1\7"+
+    "\1\125\1\7\1\126\16\7\2\0\3\7\25\0\4\7"+
+    "\1\127\15\7\2\0\3\7\25\0\1\130\21\7\2\0"+
+    "\3\7\25\0\1\131\21\7\2\0\3\7\25\0\6\7"+
+    "\1\132\13\7\2\0\3\7\50\0\1\133\30\0\1\134"+
+    "\21\7\2\0\3\7\25\0\1\7\1\135\20\7\2\0"+
+    "\3\7\25\0\11\7\1\136\10\7\2\0\3\7\25\0"+
+    "\1\7\1\137\20\7\2\0\3\7\25\0\1\140\21\7"+
+    "\2\0\3\7\25\0\16\7\1\141\3\7\2\0\3\7"+
+    "\25\0\1\142\21\7\2\0\3\7\25\0\7\7\1\143"+
+    "\12\7\2\0\3\7\25\0\1\7\1\144\20\7\2\0"+
+    "\3\7\25\0\5\7\1\145\14\7\2\0\3\7\25\0"+
+    "\4\7\1\146\15\7\2\0\3\7\25\0\11\7\1\147"+
+    "\10\7\2\0\3\7\25\0\6\7\1\150\13\7\2\0"+
+    "\3\7\25\0\1\7\1\151\20\7\2\0\3\7\25\0"+
+    "\1\7\1\152\20\7\2\0\3\7\25\0\5\7\1\153"+
+    "\14\7\2\0\3\7\25\0\5\7\1\154\14\7\2\0"+
+    "\3\7\25\0\15\7\1\155\4\7\2\0\3\7\25\0"+
+    "\5\7\1\156\14\7\2\0\3\7\25\0\7\7\1\157"+
+    "\12\7\2\0\3\7\25\0\6\7\1\160\13\7\2\0"+
+    "\3\7\20\0";
 
   private static int [] zzUnpackTrans() {
-    int [] result = new int[3564];
+    int [] result = new int[3300];
     int offset = 0;
     offset = zzUnpackTrans(ZZ_TRANS_PACKED_0, offset, result);
     return result;
@@ -229,11 +223,11 @@ public class Lexer {
   private static final int [] ZZ_ATTRIBUTE = zzUnpackAttribute();
 
   private static final String ZZ_ATTRIBUTE_PACKED_0 =
-    "\1\0\1\11\15\1\2\11\6\1\11\11\21\1\6\11"+
-    "\1\1\1\11\25\1\1\0\14\1\1\11\32\1";
+    "\1\0\1\11\15\1\2\11\6\1\12\11\20\1\6\11"+
+    "\1\1\1\11\25\1\1\0\13\1\1\11\25\1";
 
   private static int [] zzUnpackAttribute() {
-    int [] result = new int[118];
+    int [] result = new int[112];
     int offset = 0;
     offset = zzUnpackAttribute(ZZ_ATTRIBUTE_PACKED_0, offset, result);
     return result;
@@ -310,18 +304,16 @@ public class Lexer {
 
   /* user code: */
     public static class LexerException extends RuntimeException {
-        public LexerException(String message) {
-            super(message);
-        }
+        public LexerException(String message) { super(message); }
     }
 
     public enum TokenType {
-        FUNCTION, REQUIRES, RETURNS, ENSURES, USES,
+        REQUIRES, RETURNS, ENSURES, USES,
         IF, ELSE, WHILE, INVARIANT, ASSERT, ASSUME,
         TRUE, FALSE, NOT, AND, OR, FORALL, EXISTS,
         INT, INT_ARRAY, NUMBER, IDENT,
         LPAREN, RPAREN, LBRACE, RBRACE, LBRACKET, RBRACKET,
-        COMMA, COLON, SEMICOLON,
+        COMMA, COLON, SEMICOLON, PIPE,
         ASSIGN, EQ, NEQ, GE, LE, GT, LT, IMPLIES, FATARROW,
         PLUS, MINUS, STAR, SLASH,
         EOF, UNKNOWN
@@ -334,10 +326,7 @@ public class Lexer {
         public final int column;
 
         public Token(TokenType type, String text, int line, int column) {
-            this.type = type;
-            this.text = text;
-            this.line = line;
-            this.column = column;
+            this.type = type; this.text = text; this.line = line; this.column = column;
         }
 
         @Override
@@ -346,7 +335,6 @@ public class Lexer {
         }
     }
 
-    // Вспомогательный метод для создания токена с текущей позицией
     private Token token(TokenType type) {
         return new Token(type, yytext(), yyline, yycolumn);
     }
@@ -372,7 +360,7 @@ public class Lexer {
     char [] map = new char[0x110000];
     int i = 0;  /* index in packed string  */
     int j = 0;  /* index in unpacked array */
-    while (i < 162) {
+    while (i < 160) {
       int  count = packed.charAt(i++);
       char value = packed.charAt(i++);
       do map[j++] = value; while (--count > 0);
@@ -790,82 +778,82 @@ public class Lexer {
             // fall through
           case 59: break;
           case 14: 
-            { return token(TokenType.LPAREN);
+            { return token(TokenType.PIPE);
             } 
             // fall through
           case 60: break;
           case 15: 
-            { return token(TokenType.RPAREN);
+            { return token(TokenType.LPAREN);
             } 
             // fall through
           case 61: break;
           case 16: 
-            { return token(TokenType.LBRACE);
+            { return token(TokenType.RPAREN);
             } 
             // fall through
           case 62: break;
           case 17: 
-            { return token(TokenType.RBRACE);
+            { return token(TokenType.LBRACE);
             } 
             // fall through
           case 63: break;
           case 18: 
-            { return token(TokenType.COMMA);
+            { return token(TokenType.RBRACE);
             } 
             // fall through
           case 64: break;
           case 19: 
-            { return token(TokenType.COLON);
+            { return token(TokenType.COMMA);
             } 
             // fall through
           case 65: break;
           case 20: 
-            { return token(TokenType.SEMICOLON);
+            { return token(TokenType.COLON);
             } 
             // fall through
           case 66: break;
           case 21: 
-            { return token(TokenType.IF);
+            { return token(TokenType.SEMICOLON);
             } 
             // fall through
           case 67: break;
           case 22: 
-            { return token(TokenType.OR);
+            { return token(TokenType.IF);
             } 
             // fall through
           case 68: break;
           case 23: 
-            { return token(TokenType.EQ);
+            { return token(TokenType.OR);
             } 
             // fall through
           case 69: break;
           case 24: 
-            { return token(TokenType.FATARROW);
+            { return token(TokenType.EQ);
             } 
             // fall through
           case 70: break;
           case 25: 
-            { return token(TokenType.NEQ);
+            { return token(TokenType.FATARROW);
             } 
             // fall through
           case 71: break;
           case 26: 
-            { return token(TokenType.GE);
+            { return token(TokenType.NEQ);
             } 
             // fall through
           case 72: break;
           case 27: 
-            { return token(TokenType.LE);
+            { return token(TokenType.GE);
             } 
             // fall through
           case 73: break;
           case 28: 
-            { return token(TokenType.IMPLIES);
+            { return token(TokenType.LE);
             } 
             // fall through
           case 74: break;
           case 29: 
-            { return token(TokenType.NOT);
+            { return token(TokenType.IMPLIES);
             } 
             // fall through
           case 75: break;
@@ -875,27 +863,27 @@ public class Lexer {
             // fall through
           case 76: break;
           case 31: 
-            { return token(TokenType.AND);
+            { return token(TokenType.NOT);
             } 
             // fall through
           case 77: break;
           case 32: 
-            { return token(TokenType.USES);
+            { return token(TokenType.AND);
             } 
             // fall through
           case 78: break;
           case 33: 
-            { return token(TokenType.TRUE);
+            { return token(TokenType.ELSE);
             } 
             // fall through
           case 79: break;
           case 34: 
-            { return token(TokenType.ELSE);
+            { return token(TokenType.USES);
             } 
             // fall through
           case 80: break;
           case 35: 
-            { return token(TokenType.FALSE);
+            { return token(TokenType.TRUE);
             } 
             // fall through
           case 81: break;
@@ -905,12 +893,12 @@ public class Lexer {
             // fall through
           case 82: break;
           case 37: 
-            { return token(TokenType.WHILE);
+            { return token(TokenType.FALSE);
             } 
             // fall through
           case 83: break;
           case 38: 
-            { return token(TokenType.FORALL);
+            { return token(TokenType.WHILE);
             } 
             // fall through
           case 84: break;
@@ -920,7 +908,7 @@ public class Lexer {
             // fall through
           case 85: break;
           case 40: 
-            { return token(TokenType.ASSUME);
+            { return token(TokenType.FORALL);
             } 
             // fall through
           case 86: break;
@@ -930,17 +918,17 @@ public class Lexer {
             // fall through
           case 87: break;
           case 42: 
-            { return token(TokenType.RETURNS);
+            { return token(TokenType.ASSUME);
             } 
             // fall through
           case 88: break;
           case 43: 
-            { return token(TokenType.ENSURES);
+            { return token(TokenType.RETURNS);
             } 
             // fall through
           case 89: break;
           case 44: 
-            { return token(TokenType.FUNCTION);
+            { return token(TokenType.ENSURES);
             } 
             // fall through
           case 90: break;
@@ -960,5 +948,6 @@ public class Lexer {
       }
     }
   }
+
 
 }

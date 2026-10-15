@@ -11,18 +11,16 @@ import java.io.Reader;
 
 %{
     public static class LexerException extends RuntimeException {
-        public LexerException(String message) {
-            super(message);
-        }
+        public LexerException(String message) { super(message); }
     }
 
     public enum TokenType {
-        FUNCTION, REQUIRES, RETURNS, ENSURES, USES,
+        REQUIRES, RETURNS, ENSURES, USES,
         IF, ELSE, WHILE, INVARIANT, ASSERT, ASSUME,
         TRUE, FALSE, NOT, AND, OR, FORALL, EXISTS,
         INT, INT_ARRAY, NUMBER, IDENT,
         LPAREN, RPAREN, LBRACE, RBRACE, LBRACKET, RBRACKET,
-        COMMA, COLON, SEMICOLON,
+        COMMA, COLON, SEMICOLON, PIPE,
         ASSIGN, EQ, NEQ, GE, LE, GT, LT, IMPLIES, FATARROW,
         PLUS, MINUS, STAR, SLASH,
         EOF, UNKNOWN
@@ -35,10 +33,7 @@ import java.io.Reader;
         public final int column;
 
         public Token(TokenType type, String text, int line, int column) {
-            this.type = type;
-            this.text = text;
-            this.line = line;
-            this.column = column;
+            this.type = type; this.text = text; this.line = line; this.column = column;
         }
 
         @Override
@@ -47,12 +42,10 @@ import java.io.Reader;
         }
     }
 
-    // Вспомогательный метод для создания токена с текущей позицией
     private Token token(TokenType type) {
         return new Token(type, yytext(), yyline, yycolumn);
     }
 %}
-
 
 LineTerminator = \r|\n|\r\n
 InputCharacter = [^\r\n]
@@ -64,7 +57,6 @@ Comment = "//" {InputCharacter}* {LineTerminator}?
 {Comment}       { }
 {WhiteSpace}+   { }
 
-"function"      { return token(TokenType.FUNCTION); }
 "requires"      { return token(TokenType.REQUIRES); }
 "returns"       { return token(TokenType.RETURNS); }
 "ensures"       { return token(TokenType.ENSURES); }
@@ -102,6 +94,7 @@ Comment = "//" {InputCharacter}* {LineTerminator}?
 "/"             { return token(TokenType.SLASH); }
 ">"             { return token(TokenType.GT); }
 "<"             { return token(TokenType.LT); }
+"|"             { return token(TokenType.PIPE); }
 
 "("             { return token(TokenType.LPAREN); }
 ")"             { return token(TokenType.RPAREN); }

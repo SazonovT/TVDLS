@@ -3,7 +3,6 @@ public class MermaidAstPrinter {
     private StringBuilder sb = new StringBuilder();
 
     public String toMermaid(Ast.Module module) {
-        // Открывающий markdown-блок для Mermaid
         sb.append("```mermaid\n");
 
         sb.append("flowchart TD\n");
@@ -18,7 +17,6 @@ public class MermaidAstPrinter {
             }
         }
 
-        // Закрывающий markdown-блок
         sb.append("```\n");
 
         return sb.toString();

@@ -309,47 +309,46 @@ public class Lexer {
   private int zzFinalHighSurrogate = 0;
 
   /* user code: */
+    public static class LexerException extends RuntimeException {
+        public LexerException(String message) {
+            super(message);
+        }
+    }
+
     public enum TokenType {
-        // Keywords
         FUNCTION, REQUIRES, RETURNS, ENSURES, USES,
-        IF, ELSE, WHILE, INVARIANT,
-        ASSERT, ASSUME,
-        // Boolean literals and logical connectives
-        TRUE, FALSE, NOT, AND, OR,
-        FORALL, EXISTS,
-        // Types
-        INT, INT_ARRAY,
-        // Literals and identifiers
-        NUMBER, IDENT,
-        // Delimiters
+        IF, ELSE, WHILE, INVARIANT, ASSERT, ASSUME,
+        TRUE, FALSE, NOT, AND, OR, FORALL, EXISTS,
+        INT, INT_ARRAY, NUMBER, IDENT,
         LPAREN, RPAREN, LBRACE, RBRACE, LBRACKET, RBRACKET,
         COMMA, COLON, SEMICOLON,
-        // Operators
-        ASSIGN, EQ, NEQ, GE, LE, GT, LT,
-        IMPLIES, FATARROW,
+        ASSIGN, EQ, NEQ, GE, LE, GT, LT, IMPLIES, FATARROW,
         PLUS, MINUS, STAR, SLASH,
-        // Service tokens
         EOF, UNKNOWN
     }
 
-    public class Token {
+    public static class Token {
         public final TokenType type;
         public final String text;
-        public final int line;    // 0-based
-        public final int column;  // 0-based
+        public final int line;
+        public final int column;
 
-        public Token(TokenType type) {
-            this.type   = type;
-            this.text   = yytext();
-            this.line   = yyline;
-            this.column = yycolumn;
+        public Token(TokenType type, String text, int line, int column) {
+            this.type = type;
+            this.text = text;
+            this.line = line;
+            this.column = column;
         }
 
         @Override
         public String toString() {
-            return String.format("%s \"%s\" at %d: %d",
-                    type, text, line + 1, column + 1);
+            return String.format("%s \"%s\" at %d:%d", type, text, line + 1, column + 1);
         }
+    }
+
+    // Вспомогательный метод для создания токена с текущей позицией
+    private Token token(TokenType type) {
+        return new Token(type, yytext(), yyline, yycolumn);
     }
 
 
@@ -583,7 +582,7 @@ public class Lexer {
    * @return      the next token
    * @exception   java.io.IOException  if any I/O-Error occurs
    */
-  public Token yylex() throws java.io.IOException {
+  public Lexer.Token yylex() throws java.io.IOException {
     int zzInput;
     int zzAction;
 
@@ -720,13 +719,13 @@ public class Lexer {
       if (zzInput == YYEOF && zzStartRead == zzCurrentPos) {
         zzAtEOF = true;
               {
-                return new Token(TokenType.EOF);
+                return new Token(TokenType.EOF, "", yyline, yycolumn);
               }
       }
       else {
         switch (zzAction < 0 ? zzAction : ZZ_ACTION[zzAction]) {
           case 1: 
-            { return new Token(TokenType.UNKNOWN);
+            { return token(TokenType.UNKNOWN);
             } 
             // fall through
           case 47: break;
@@ -736,222 +735,222 @@ public class Lexer {
             // fall through
           case 48: break;
           case 3: 
-            { return new Token(TokenType.SLASH);
+            { return token(TokenType.SLASH);
             } 
             // fall through
           case 49: break;
           case 4: 
-            { return new Token(TokenType.IDENT);
+            { return token(TokenType.IDENT);
             } 
             // fall through
           case 50: break;
           case 5: 
-            { return new Token(TokenType.LBRACKET);
+            { return token(TokenType.LBRACKET);
             } 
             // fall through
           case 51: break;
           case 6: 
-            { return new Token(TokenType.RBRACKET);
+            { return token(TokenType.RBRACKET);
             } 
             // fall through
           case 52: break;
           case 7: 
-            { return new Token(TokenType.NUMBER);
+            { return token(TokenType.NUMBER);
             } 
             // fall through
           case 53: break;
           case 8: 
-            { return new Token(TokenType.ASSIGN);
+            { return token(TokenType.ASSIGN);
             } 
             // fall through
           case 54: break;
           case 9: 
-            { return new Token(TokenType.GT);
+            { return token(TokenType.GT);
             } 
             // fall through
           case 55: break;
           case 10: 
-            { return new Token(TokenType.LT);
+            { return token(TokenType.LT);
             } 
             // fall through
           case 56: break;
           case 11: 
-            { return new Token(TokenType.MINUS);
+            { return token(TokenType.MINUS);
             } 
             // fall through
           case 57: break;
           case 12: 
-            { return new Token(TokenType.PLUS);
+            { return token(TokenType.PLUS);
             } 
             // fall through
           case 58: break;
           case 13: 
-            { return new Token(TokenType.STAR);
+            { return token(TokenType.STAR);
             } 
             // fall through
           case 59: break;
           case 14: 
-            { return new Token(TokenType.LPAREN);
+            { return token(TokenType.LPAREN);
             } 
             // fall through
           case 60: break;
           case 15: 
-            { return new Token(TokenType.RPAREN);
+            { return token(TokenType.RPAREN);
             } 
             // fall through
           case 61: break;
           case 16: 
-            { return new Token(TokenType.LBRACE);
+            { return token(TokenType.LBRACE);
             } 
             // fall through
           case 62: break;
           case 17: 
-            { return new Token(TokenType.RBRACE);
+            { return token(TokenType.RBRACE);
             } 
             // fall through
           case 63: break;
           case 18: 
-            { return new Token(TokenType.COMMA);
+            { return token(TokenType.COMMA);
             } 
             // fall through
           case 64: break;
           case 19: 
-            { return new Token(TokenType.COLON);
+            { return token(TokenType.COLON);
             } 
             // fall through
           case 65: break;
           case 20: 
-            { return new Token(TokenType.SEMICOLON);
+            { return token(TokenType.SEMICOLON);
             } 
             // fall through
           case 66: break;
           case 21: 
-            { return new Token(TokenType.IF);
+            { return token(TokenType.IF);
             } 
             // fall through
           case 67: break;
           case 22: 
-            { return new Token(TokenType.OR);
+            { return token(TokenType.OR);
             } 
             // fall through
           case 68: break;
           case 23: 
-            { return new Token(TokenType.EQ);
+            { return token(TokenType.EQ);
             } 
             // fall through
           case 69: break;
           case 24: 
-            { return new Token(TokenType.FATARROW);
+            { return token(TokenType.FATARROW);
             } 
             // fall through
           case 70: break;
           case 25: 
-            { return new Token(TokenType.NEQ);
+            { return token(TokenType.NEQ);
             } 
             // fall through
           case 71: break;
           case 26: 
-            { return new Token(TokenType.GE);
+            { return token(TokenType.GE);
             } 
             // fall through
           case 72: break;
           case 27: 
-            { return new Token(TokenType.LE);
+            { return token(TokenType.LE);
             } 
             // fall through
           case 73: break;
           case 28: 
-            { return new Token(TokenType.IMPLIES);
+            { return token(TokenType.IMPLIES);
             } 
             // fall through
           case 74: break;
           case 29: 
-            { return new Token(TokenType.NOT);
+            { return token(TokenType.NOT);
             } 
             // fall through
           case 75: break;
           case 30: 
-            { return new Token(TokenType.INT);
+            { return token(TokenType.INT);
             } 
             // fall through
           case 76: break;
           case 31: 
-            { return new Token(TokenType.AND);
+            { return token(TokenType.AND);
             } 
             // fall through
           case 77: break;
           case 32: 
-            { return new Token(TokenType.USES);
+            { return token(TokenType.USES);
             } 
             // fall through
           case 78: break;
           case 33: 
-            { return new Token(TokenType.TRUE);
+            { return token(TokenType.TRUE);
             } 
             // fall through
           case 79: break;
           case 34: 
-            { return new Token(TokenType.ELSE);
+            { return token(TokenType.ELSE);
             } 
             // fall through
           case 80: break;
           case 35: 
-            { return new Token(TokenType.FALSE);
+            { return token(TokenType.FALSE);
             } 
             // fall through
           case 81: break;
           case 36: 
-            { return new Token(TokenType.INT_ARRAY);
+            { return token(TokenType.INT_ARRAY);
             } 
             // fall through
           case 82: break;
           case 37: 
-            { return new Token(TokenType.WHILE);
+            { return token(TokenType.WHILE);
             } 
             // fall through
           case 83: break;
           case 38: 
-            { return new Token(TokenType.FORALL);
+            { return token(TokenType.FORALL);
             } 
             // fall through
           case 84: break;
           case 39: 
-            { return new Token(TokenType.EXISTS);
+            { return token(TokenType.EXISTS);
             } 
             // fall through
           case 85: break;
           case 40: 
-            { return new Token(TokenType.ASSUME);
+            { return token(TokenType.ASSUME);
             } 
             // fall through
           case 86: break;
           case 41: 
-            { return new Token(TokenType.ASSERT);
+            { return token(TokenType.ASSERT);
             } 
             // fall through
           case 87: break;
           case 42: 
-            { return new Token(TokenType.RETURNS);
+            { return token(TokenType.RETURNS);
             } 
             // fall through
           case 88: break;
           case 43: 
-            { return new Token(TokenType.ENSURES);
+            { return token(TokenType.ENSURES);
             } 
             // fall through
           case 89: break;
           case 44: 
-            { return new Token(TokenType.FUNCTION);
+            { return token(TokenType.FUNCTION);
             } 
             // fall through
           case 90: break;
           case 45: 
-            { return new Token(TokenType.REQUIRES);
+            { return token(TokenType.REQUIRES);
             } 
             // fall through
           case 91: break;
           case 46: 
-            { return new Token(TokenType.INVARIANT);
+            { return token(TokenType.INVARIANT);
             } 
             // fall through
           case 92: break;

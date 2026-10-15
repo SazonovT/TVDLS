@@ -4,13 +4,11 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.util.List;
 
 public final class Main {
-
     public static void main(String[] args) {
         if (args.length < 1) {
-            System.err.println("Usage: java tvdls.Main <source.funny> [-o out.mmd]");
+            System.err.println("Usage: java Main <source.funny> [-o out.mmd]");
             System.exit(2);
         }
 
@@ -53,60 +51,33 @@ public final class Main {
         }
     }
 
-    /** Полный конвейер: файл -> лексер -> TokenStream -> Parser -> Mermaid. */
     private static String compile(Path input) throws IOException {
-        // 1) лексер
-        Lexer lexer;
         try (Reader r = Files.newBufferedReader(input, StandardCharsets.UTF_8)) {
-            lexer = new Lexer(r);
-        } catch (IOException e) {
-            throw new IOException("failed to open lexer: " + e.getMessage(), e);
-        }
+            Lexer lexer = new Lexer(r);
+            TokenStream stream = new TokenStream(lexer);
 
-        // 2) накопление токенов с проверкой ошибок лексера
-        List<Lexer.Token> tokens = new java.util.ArrayList<>();
-        try {
-            Lexer.Token t;
-            while ((t = lexer.next()).type != Token.type.EOF) {
-                if (t.type == Token.Type.UNKNOWN) {
-                    // мягкая диагностика: пишем в stderr, но продолжаем
-                    System.err.printf("lex: unknown token '%s' at line %d, col %d%n",
-                            t.text, t.line + 1, t.column + 1);
+            Parser parser = new Parser(stream);
+            Ast.Module module;
+
+            try {
+                module = parser.parseModule();
+            } catch (RuntimeException e) {
+                System.err.println("Parse errors:");
+                for (Parser.Diagnostic d : parser.getDiagnostics()) {
+                    System.err.printf(" line %d, col %d: %s%n", d.line + 1, d.column + 1, d.message);
                 }
-                tokens.add(t);
+                System.exit(1);
+                return "";
             }
-        } catch (Lexer.LexerException e) {
-            System.err.println("Lexer error: " + e.getMessage());
-            System.exit(1);
-        }
 
-        // 3) парсер
-        TokenStream stream = new TokenStream(tokens);
-        Parser parser = new Parser(stream);
-        Ast.Module module;
-        try {
-            module = parser.parseModule();
-        } catch (Parser.ParseException e) {
-            // Parser обычно копит ошибки в список; печатаем всё, что есть
-            System.err.println("Parse errors:");
-            for (Parser.Diagnostic d : parser.getDiagnostics()) {
-                System.err.printf("  line %d, col %d: %s%n",
-                        d.line + 1, d.column + 1, d.message);
+            if (!parser.getDiagnostics().isEmpty()) {
+                System.err.println("Parse warnings/errors:");
+                for (Parser.Diagnostic d : parser.getDiagnostics()) {
+                    System.err.printf(" line %d, col %d: %s%n", d.line + 1, d.column + 1, d.message);
+                }
             }
-            // падаем, но при желании можно продолжить и напечатать частичный AST
-            System.exit(1);
-            return "";
-        }
 
-        if (!parser.getDiagnostics().isEmpty()) {
-            System.err.println("Parse warnings/errors:");
-            for (Parser.Diagnostic d : parser.getDiagnostics()) {
-                System.err.printf("  line %d, col %d: %s%n",
-                        d.line + 1, d.column + 1, d.message);
-            }
+            return new MermaidAstPrinter().toMermaid(module);
         }
-
-        // 4) Mermaid
-        return new MermaidAstPrinter().toMermaid(module);
     }
 }

@@ -2,19 +2,14 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * AST языка Funny. Минимальные узлы, достаточные для синтаксического разбора
- * и последующих проходов (обессахаривание a[i]=v -> set(...), вывод типов).
+ * AST языка Funny.
  */
 public final class Ast {
 
     public interface Node {}
 
-    /** abstract base для выражений целого типа */
     public interface IntExpr extends Node {}
-    /** abstract base для логических формул/условий/предикатов */
     public interface PredNode extends Node {}
-
-    // ---------- модуль ----------
 
     public static final class Module implements Node {
         public final List<Node> items = new ArrayList<>(); // Function | Formula
@@ -22,16 +17,16 @@ public final class Ast {
 
     public static final class VariableDef {
         public final String name;
-        public final String type; // "int" | "int[]" | null (локальная без аннотации)
+        public final String type; // "int" | "int[]" | null
         public VariableDef(String name, String type) { this.name = name; this.type = type; }
     }
 
     public static final class Function implements Node {
         public final String name;
         public final List<VariableDef> params = new ArrayList<>();
-        public PredNode requires;                  // или null (=> true)
+        public PredNode requires;
         public final List<VariableDef> returns = new ArrayList<>();
-        public PredNode ensures;                   // или null
+        public PredNode ensures;
         public final List<VariableDef> locals = new ArrayList<>();
         public Statement body;
         public Function(String name) { this.name = name; }
@@ -44,21 +39,17 @@ public final class Ast {
         public Formula(String name) { this.name = name; }
     }
 
-    // ---------- операторы ----------
-
     public interface Statement extends Node {}
 
-    /** varName = expr;  |  a[i][j] = expr;  (lhs — цепочка индексов) */
     public static final class Assign implements Statement {
         public final String target;
-        public final List<IntExpr> indices; // пустой список — обычное присваивание
+        public final List<IntExpr> indices;
         public final IntExpr value;
         public Assign(String target, List<IntExpr> indices, IntExpr value) {
             this.target = target; this.indices = indices; this.value = value;
         }
     }
 
-    /** var1, var2 = f(args);  — присваивание кортежа от функции с множественным возвратом */
     public static final class TupleAssign implements Statement {
         public final List<String> targets;
         public final Call call;
@@ -70,7 +61,7 @@ public final class Ast {
     public static final class If implements Statement {
         public final Condition cond;
         public final Statement thenBranch;
-        public final Statement elseBranch; // или null
+        public final Statement elseBranch;
         public If(Condition cond, Statement thenBranch, Statement elseBranch) {
             this.cond = cond; this.thenBranch = thenBranch; this.elseBranch = elseBranch;
         }
@@ -78,7 +69,7 @@ public final class Ast {
 
     public static final class While implements Statement {
         public final Condition cond;
-        public PredNode invariant; // или null (=> true)
+        public PredNode invariant;
         public Statement body;
         public While(Condition cond, Statement body) {
             this.cond = cond; this.body = body;
@@ -99,8 +90,6 @@ public final class Ast {
         public Assume(Predicate predicate) { this.predicate = predicate; }
     }
 
-    // ---------- выражения ----------
-
     public static final class NumLit implements IntExpr {
         public final long value;
         public NumLit(long value) { this.value = value; }
@@ -113,7 +102,7 @@ public final class Ast {
 
     public static final class ArrayAccess implements IntExpr {
         public final String array;
-        public final List<IntExpr> indices; // >= 1
+        public final List<IntExpr> indices;
         public ArrayAccess(String array, List<IntExpr> indices) {
             this.array = array; this.indices = indices;
         }
@@ -139,12 +128,8 @@ public final class Ast {
         }
     }
 
-    // ---------- условия / предикаты ----------
-
-    /** condition — булевы выражения внутри if/while */
     public interface Condition extends PredNode {}
 
-    /** predicate — condition + кванторы и ссылки на формулы (requires/ensures/invariant/assert/assume) */
     public interface Predicate extends Condition {}
 
     public static final class BoolLit implements Predicate {
@@ -162,7 +147,7 @@ public final class Ast {
     }
 
     public static final class Not implements Predicate {
-        public final PredNode operand; // Condition в condition-контексте, Predicate в predicate-контексте
+        public final PredNode operand;
         public Not(PredNode operand) { this.operand = operand; }
     }
 

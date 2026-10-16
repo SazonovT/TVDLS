@@ -303,10 +303,6 @@ public class Lexer {
   private int zzFinalHighSurrogate = 0;
 
   /* user code: */
-    public static class LexerException extends RuntimeException {
-        public LexerException(String message) { super(message); }
-    }
-
     public enum TokenType {
         REQUIRES, RETURNS, ENSURES, USES,
         IF, ELSE, WHILE, INVARIANT, ASSERT, ASSUME,

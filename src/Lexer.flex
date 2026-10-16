@@ -10,10 +10,6 @@ import java.io.Reader;
 %type Lexer.Token
 
 %{
-    public static class LexerException extends RuntimeException {
-        public LexerException(String message) { super(message); }
-    }
-
     public enum TokenType {
         REQUIRES, RETURNS, ENSURES, USES,
         IF, ELSE, WHILE, INVARIANT, ASSERT, ASSUME,
@@ -50,7 +46,7 @@ import java.io.Reader;
 LineTerminator = \r|\n|\r\n
 InputCharacter = [^\r\n]
 WhiteSpace = {LineTerminator} | [ \t\f]
-Comment = "//" {InputCharacter}* {LineTerminator}?
+Comment = "//" {InputCharacter} * {LineTerminator}?
 
 %%
 

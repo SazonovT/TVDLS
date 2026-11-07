@@ -2,27 +2,40 @@ public class MermaidAstPrinter {
     private int nodeId;
     private StringBuilder sb;
 
-    public String toMermaid(Ast.Module module) {
+    public String toMermaid(Ast.Module module, boolean as_md) {
         nodeId = 0;
-        sb = new StringBuilder("```mermaid\nflowchart TD\n");
+        sb = new StringBuilder();
+
+        if (as_md) {
+            sb.append("```mermaid\n");
+        }
+        sb.append("graph TD\n");
+
         String rootId = printNode(module, "Module");
 
-        for (Ast.Node item : module.items) {
+        for (Ast.Node item : module.getItems()) {
             printTopLevel(item, rootId);
         }
 
-        sb.append("```\n");
+        if (as_md) {
+            sb.append("```\n");
+        }
         return sb.toString();
+    }
+
+    public String toMermaid(Ast.Module module) {
+        return toMermaid(module, false);
     }
 
     private void printTopLevel(Ast.Node node, String parentId) {
         String id;
         if (node instanceof Ast.Function) {
-            id = printNode(node, "Function: " + ((Ast.Function) node).name);
+            id = printNode(node, "Function: " + ((Ast.Function) node).getName());
             printFunctionChildren((Ast.Function) node, id);
         } else if (node instanceof Ast.Formula) {
-            id = printNode(node, "Formula: " + ((Ast.Formula) node).name);
-            printPredicate(((Ast.Formula) node).body, id);
+            id = printNode(node, "Formula: " + ((Ast.Formula) node).getName());
+            printVariableDefs(((Ast.Formula) node).getParams(), "params", id);
+            printPredicate(((Ast.Formula) node).getBody(), id);
         } else {
             id = printNode(node, node.getClass().getSimpleName());
         }
@@ -30,12 +43,12 @@ public class MermaidAstPrinter {
     }
 
     private void printFunctionChildren(Ast.Function fn, String parentId) {
-        printVariableDefs(fn.params, "params", parentId);
-        printPredicate(fn.requires, parentId);
-        printVariableDefs(fn.returns, "returns", parentId);
-        printPredicate(fn.ensures, parentId);
-        printVariableDefs(fn.locals, "locals", parentId);
-        printStatement(fn.body, parentId);
+        printVariableDefs(fn.getParams(), "params", parentId);
+        printPredicate(fn.getRequires(), "requires", parentId);
+        printVariableDefs(fn.getReturns(), "returns", parentId);
+        printPredicate(fn.getEnsures(), "ensures", parentId);
+        printVariableDefs(fn.getLocals(), "locals", parentId);
+        printStatement(fn.getBody(), parentId);
     }
 
     private void printVariableDefs(java.util.List<Ast.VariableDef> defs, String label, String parentId) {
@@ -46,7 +59,7 @@ public class MermaidAstPrinter {
     }
 
     private String variableLabel(Ast.VariableDef def) {
-        return "Variable: " + def.name + " : " + def.type;
+        return "Variable: " + def.getName();
     }
 
     private void printStatement(Ast.Statement stmt, String parentId) {
@@ -56,86 +69,91 @@ public class MermaidAstPrinter {
         String id;
         if (stmt instanceof Ast.Block) {
             id = printNode(stmt, "Block");
-            for (Ast.Statement child : ((Ast.Block) stmt).statements) {
+            for (Ast.Statement child : ((Ast.Block) stmt).getStatements()) {
                 printStatement(child, id);
             }
         } else if (stmt instanceof Ast.Assign) {
             Ast.Assign assign = (Ast.Assign) stmt;
-            id = printNode(assign, "Assign: " + assign.target);
-            for (Ast.IntExpr index : assign.indices) {
+            id = printNode(assign, "Assign: " + assign.getTarget());
+            for (Ast.IntExpr index : assign.getIndices()) {
                 printExpression(index, id);
             }
-            printExpression(assign.value, id);
+            printExpression(assign.getValue(), id);
         } else if (stmt instanceof Ast.TupleAssign) {
             Ast.TupleAssign tuple = (Ast.TupleAssign) stmt;
-            id = printNode(tuple, "TupleAssign");
-            printExpression(tuple.call, id);
+            id = printNode(tuple, "TupleAssign: " + String.join(", ", tuple.getTargets()));
+            printExpression(tuple.getCall(), id);
         } else if (stmt instanceof Ast.If) {
             Ast.If ifStmt = (Ast.If) stmt;
             id = printNode(ifStmt, "If");
-            printPredicate(ifStmt.cond, id);
-            printStatement(ifStmt.thenBranch, id);
-            printStatement(ifStmt.elseBranch, id);
+            printPredicate(ifStmt.getCond(), id);
+            printStatement(ifStmt.getThenBranch(), id);
+            printStatement(ifStmt.getElseBranch(), id);
         } else if (stmt instanceof Ast.While) {
             Ast.While whileStmt = (Ast.While) stmt;
             id = printNode(whileStmt, "While");
-            printPredicate(whileStmt.cond, id);
-            printPredicate(whileStmt.invariant, id);
-            printStatement(whileStmt.body, id);
+            printPredicate(whileStmt.getCond(), id);
+            printPredicate(whileStmt.getInvariant(), id);
+            printStatement(whileStmt.getBody(), id);
         } else if (stmt instanceof Ast.Assert) {
             Ast.Assert assertion = (Ast.Assert) stmt;
             id = printNode(assertion, "Assert");
-            printPredicate(assertion.predicate, id);
+            printPredicate(assertion.getPredicate(), id);
         } else if (stmt instanceof Ast.Assume) {
             Ast.Assume assumption = (Ast.Assume) stmt;
             id = printNode(assumption, "Assume");
-            printPredicate(assumption.predicate, id);
+            printPredicate(assumption.getPredicate(), id);
         } else {
             id = printNode((Ast.Node) stmt, stmt.getClass().getSimpleName());
         }
         edge(parentId, id);
     }
 
-    private String printPredicate(Ast.PredNode predicate, String parentId) {
+
+    private String printPredicate(Ast.PredNode predicate, String parentId){
+        return printPredicate(predicate, "", parentId);
+    }
+    private String printPredicate(Ast.PredNode predicate, String label, String parentId) {
         if (predicate == null) {
             return null;
         }
+        String labelPrefix = (label == null || label.isEmpty()) ? "" : (label + ": ");
         String id;
         if (predicate instanceof Ast.BoolLit) {
-            id = printNode((Ast.Node) predicate, "Bool: " + ((Ast.BoolLit) predicate).value);
+            id = printNode((Ast.Node) predicate, labelPrefix + "Bool: " + ((Ast.BoolLit) predicate).getValue());
         } else if (predicate instanceof Ast.Comparison) {
             Ast.Comparison comparison = (Ast.Comparison) predicate;
-            id = printNode(comparison, "Comparison: " + comparison.op);
-            printExpression(comparison.left, id);
-            printExpression(comparison.right, id);
+            id = printNode(comparison, labelPrefix + "Comparison: " + comparison.getOp());
+            printExpression(comparison.getLeft(), id);
+            printExpression(comparison.getRight(), id);
         } else if (predicate instanceof Ast.Not) {
             Ast.Not not = (Ast.Not) predicate;
-            id = printNode(not, "Not");
-            printPredicate(not.operand, id);
+            id = printNode(not, labelPrefix + "Not");
+            printPredicate(not.getOperand(), id);
         } else if (predicate instanceof Ast.AndOr) {
             Ast.AndOr andOr = (Ast.AndOr) predicate;
-            id = printNode(andOr, "Logical: " + andOr.op);
-            printPredicate(andOr.left, id);
-            printPredicate(andOr.right, id);
+            id = printNode(andOr, labelPrefix + "Logical: " + andOr.getOp());
+            printPredicate(andOr.getLeft(), id);
+            printPredicate(andOr.getRight(), id);
         } else if (predicate instanceof Ast.Implies) {
             Ast.Implies implies = (Ast.Implies) predicate;
-            id = printNode(implies, "Implies");
-            printPredicate(implies.left, id);
-            printPredicate(implies.right, id);
+            id = printNode(implies, labelPrefix + "Implies");
+            printPredicate(implies.getLeft(), id);
+            printPredicate(implies.getRight(), id);
         } else if (predicate instanceof Ast.Quantifier) {
             Ast.Quantifier quantifier = (Ast.Quantifier) predicate;
-            id = printNode(quantifier, "Quantifier: " + quantifier.kind);
-            String variableId = printNode(quantifier.variable, variableLabel(quantifier.variable));
+            id = printNode(quantifier, labelPrefix + "Quantifier: " + quantifier.getKind());
+            String variableId = printNode(quantifier.getVariable(), variableLabel(quantifier.getVariable()));
             edge(id, variableId);
-            printPredicate(quantifier.body, id);
+            printPredicate(quantifier.getBody(), id);
         } else if (predicate instanceof Ast.FormulaRef) {
             Ast.FormulaRef ref = (Ast.FormulaRef) predicate;
-            id = printNode(ref, "FormulaRef: " + ref.name);
-            for (Ast.IntExpr arg : ref.args) {
+            id = printNode(ref, labelPrefix + "FormulaRef: " + ref.getName());
+            for (Ast.IntExpr arg : ref.getArgs()) {
                 printExpression(arg, id);
             }
         } else {
-            id = printNode((Ast.Node) predicate, predicate.getClass().getSimpleName());
+            id = printNode((Ast.Node) predicate, labelPrefix + predicate.getClass().getSimpleName());
         }
         edge(parentId, id);
         return id;
@@ -147,30 +165,30 @@ public class MermaidAstPrinter {
         }
         String id;
         if (expression instanceof Ast.NumLit) {
-            id = printNode((Ast.NumLit) expression, "Number: " + ((Ast.NumLit) expression).value);
+            id = printNode((Ast.NumLit) expression, "Number: " + ((Ast.NumLit) expression).getValue());
         } else if (expression instanceof Ast.Var) {
-            id = printNode((Ast.Var) expression, "Variable: " + ((Ast.Var) expression).name);
+            id = printNode((Ast.Var) expression, "Variable: " + ((Ast.Var) expression).getName());
         } else if (expression instanceof Ast.ArrayAccess) {
             Ast.ArrayAccess access = (Ast.ArrayAccess) expression;
-            id = printNode(access, "ArrayAccess: " + access.array);
-            for (Ast.IntExpr index : access.indices) {
+            id = printNode(access, "ArrayAccess: " + access.getArray());
+            for (Ast.IntExpr index : access.getIndices()) {
                 printExpression(index, id);
             }
         } else if (expression instanceof Ast.Call) {
             Ast.Call call = (Ast.Call) expression;
-            id = printNode(call, "Call: " + call.name);
-            for (Ast.IntExpr arg : call.args) {
+            id = printNode(call, "Call: " + call.getName());
+            for (Ast.IntExpr arg : call.getArgs()) {
                 printExpression(arg, id);
             }
         } else if (expression instanceof Ast.Neg) {
             Ast.Neg neg = (Ast.Neg) expression;
             id = printNode(neg, "Neg");
-            printExpression(neg.operand, id);
+            printExpression(neg.getOperand(), id);
         } else if (expression instanceof Ast.Arith) {
             Ast.Arith arith = (Ast.Arith) expression;
-            id = printNode(arith, "Arithmetic: " + arith.op);
-            printExpression(arith.left, id);
-            printExpression(arith.right, id);
+            id = printNode(arith, "Arithmetic: " + arith.getOp());
+            printExpression(arith.getLeft(), id);
+            printExpression(arith.getRight(), id);
         } else {
             id = printNode((Ast.Node) expression, expression.getClass().getSimpleName());
         }
@@ -191,7 +209,12 @@ public class MermaidAstPrinter {
     }
 
     private String nodeLabel(Ast.Node node, String label) {
-        return label + "\\n" + (node.getLine() + 1)
+        if (node instanceof Ast.Expr expr) {
+            label += "<br/>type: " + expr.getInferredType();
+        } else if (node instanceof Ast.VariableDef def) {
+            label += "<br/>type: " + def.getType();
+        }
+        return label  + "\\n" + (node.getLine() + 1)
                 + ":" + (node.getColumn() + 1);
     }
 
